@@ -95,6 +95,4 @@ These are intended editor-building milestones that can be implemented incrementa
 - Keep changes small and test locally with `npm run dev`.
 - If you add editor features, update this README with the completed capability and any new setup notes.
 
-## License
 
-Add your license here (e.g., MIT).
