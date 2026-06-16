@@ -5,6 +5,7 @@ import { EditorPage } from "@/pages/EditorPage"
 import { ExportPage } from "@/pages/ExportPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { SignupPage } from "@/pages/SignupPage"
+import { DashboardPage } from "@/pages/DashboardPage"
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
         <Route path="/export" element={<ExportPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
       </Routes>
     </BrowserRouter>
   )

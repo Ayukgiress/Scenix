@@ -113,7 +113,7 @@ export function SignupPage() {
             <div className="h-px flex-1 bg-border" />
           </div>
 
-          <form className="flex flex-col gap-3" onSubmit={(e) => e.preventDefault()}>
+          <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); window.location.href = "/dashboard" }}>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[12px] font-medium text-foreground">First name</label>
