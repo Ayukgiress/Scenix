@@ -1,6 +1,5 @@
 // import { Button } from "@/components/ui/button"
 import { Link } from "react-router-dom"
-import { useTypewriter } from "@/hooks/useTypewriter"
 import { HeroBg } from "@/components/landing/HeroBg"
 import { EditorPreview, FeatureCard } from "@/components/landing/EditorPreview"
 import {
@@ -9,6 +8,9 @@ import {
   PricingSection,
   FaqSection,
   CtaSection,
+  UseCasesSection,
+  StatsSection,
+  ComparisonSection,
 } from "@/components/landing/PageSections"
 
 const features = [
@@ -78,16 +80,7 @@ const features = [
   },
 ]
 
-const AI_PROMPTS = [
-  "Generate a cinematic drone intro, golden hour...",
-  "Remove background noise and enhance vocals...",
-  "Auto-cut to beat — apply cinematic LUT...",
-  "Upscale to 4K and stabilise shaky footage...",
-  "Generate B-roll from script: urban timelapse...",
-]
-
 export function LandingPage() {
-  const prompt = useTypewriter(AI_PROMPTS)
 
   return (
     <>
@@ -95,31 +88,20 @@ export function LandingPage() {
         {/* Animated canvas bg */}
         <HeroBg />
 
-        {/* Scan line sweep */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[2px] opacity-20"
-          style={{
-            background: "linear-gradient(90deg, transparent, oklch(0.72 0.14 285), transparent)",
-            animation: "scan-line 8s linear infinite",
-          }}
-        />
-
-        {/* Bottom gradient fade into page */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-32"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-40"
           style={{ background: "linear-gradient(to bottom, transparent, oklch(0.16 0.005 260))" }}
         />
 
-        <div className="relative z-10 mx-auto w-full max-w-7xl px-5 py-24 md:py-32">
-          <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+        <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 py-20 md:py-28">
+          <div className="grid items-center gap-16 lg:grid-cols-[1fr_600px] lg:gap-20">
 
             {/* ── Left: copy ── */}
-            <div>
+            <div className="max-w-2xl">
               {/* Badge */}
               <div
-                className="hero-fade-in inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-sm"
+                className="hero-fade-in inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-[11px] text-muted-foreground backdrop-blur-sm"
                 style={{ animationDelay: "0ms" }}
               >
                 <span className="relative flex size-2">
@@ -131,7 +113,7 @@ export function LandingPage() {
 
               {/* Headline */}
               <h1
-                className="hero-fade-up mt-6 text-balance text-[42px] font-semibold leading-[1.04] tracking-tight md:text-[58px]"
+                className="hero-fade-up mt-8 text-balance text-[48px] font-semibold leading-[1.06] tracking-tight md:text-[64px]"
                 style={{ animationDelay: "80ms" }}
               >
                 <span className="text-foreground">Create. Edit. Generate.</span>
@@ -141,7 +123,7 @@ export function LandingPage() {
 
               {/* Sub */}
               <p
-                className="hero-fade-up mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground"
+                className="hero-fade-up mt-6 max-w-lg text-[17px] leading-relaxed text-muted-foreground"
                 style={{ animationDelay: "160ms" }}
               >
                 The browser-native studio that thinks with you. Generate footage, edit on a
@@ -150,12 +132,12 @@ export function LandingPage() {
 
               {/* CTAs */}
               <div
-                className="hero-fade-up mt-8 flex flex-wrap items-center gap-3"
+                className="hero-fade-up mt-10 flex flex-wrap items-center gap-4"
                 style={{ animationDelay: "220ms" }}
               >
                 <Link
                   to="/signup"
-                  className="group relative inline-flex h-11 items-center overflow-hidden rounded-md bg-primary px-6 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                  className="group relative inline-flex h-12 items-center overflow-hidden rounded-lg bg-primary px-8 text-[14px] font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:shadow-xl hover:shadow-primary/30"
                 >
                   <span
                     aria-hidden
@@ -165,54 +147,30 @@ export function LandingPage() {
                 </Link>
                 <a
                   href="#features"
-                  className="inline-flex h-11 items-center rounded-md border border-border px-6 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+                  className="inline-flex h-12 items-center rounded-lg border border-border px-8 text-[14px] font-medium text-foreground transition-colors hover:bg-muted"
                 >
                   See features
                 </a>
               </div>
 
-              {/* AI prompt bar */}
-              <div
-                className="hero-fade-up mt-8 flex items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-3 backdrop-blur-sm"
-                style={{ animationDelay: "300ms" }}
-              >
-                <svg viewBox="0 0 24 24" className="size-4 shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a10 10 0 0 1 10 10c0 5.52-4.48 10-10 10S2 17.52 2 12 6.48 2 12 2z" />
-                  <path d="M12 8v4l3 3" />
-                </svg>
-                <span className="flex-1 truncate font-mono text-[12px] text-muted-foreground">
-                  {prompt}
-                  <span className="cursor-blink ml-0.5 inline-block w-[2px] translate-y-[1px] bg-primary align-middle" style={{ height: "1em" }} />
-                </span>
-                <span className="shrink-0 rounded border border-border px-2 py-0.5 text-[10px] text-muted-foreground">AI</span>
-              </div>
-
               {/* Stats */}
               <div
-                className="hero-fade-up mt-8 flex items-center gap-8 border-t border-border pt-8"
-                style={{ animationDelay: "380ms" }}
+                className="hero-fade-up mt-12 flex items-center gap-10 border-t border-border/50 pt-8"
+                style={{ animationDelay: "300ms" }}
               >
-                {([["10K+", "creators"], ["4K 60fps", "export"], ["0", "installs"]] as const).map(([val, label]) => (
+                {([["10K+", "creators"], ["4K 60fps", "export"], ["Zero", "installs"]] as const).map(([val, label]) => (
                   <div key={label}>
-                    <p className="text-[22px] font-semibold tracking-tight text-foreground">{val}</p>
-                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+                    <p className="text-[26px] font-semibold tracking-tight text-foreground">{val}</p>
+                    <p className="text-[12px] uppercase tracking-wider text-muted-foreground">{label}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* ── Right: editor preview ── */}
             <div
-              id="editor"
-              className="hero-fade-up"
+              className="hero-fade-up relative"
               style={{ animationDelay: "120ms" }}
             >
-              {/* Glow behind preview */}
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -inset-10 -z-10 blur-3xl"
-                style={{ background: "radial-gradient(60% 60% at 50% 50%, oklch(0.72 0.14 285 / 0.12), transparent 80%)" }}
-              />
               <EditorPreview />
             </div>
 
@@ -240,7 +198,10 @@ export function LandingPage() {
       </section>
 
       <StepsSection />
+      <UseCasesSection />
+      <StatsSection />
       <TestimonialsSection />
+      <ComparisonSection />
       <PricingSection />
       <FaqSection />
       <CtaSection />

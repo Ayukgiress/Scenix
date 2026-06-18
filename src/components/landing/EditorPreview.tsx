@@ -1,185 +1,150 @@
-import { useEffect, useRef, useState } from "react"
-import type { ReactNode, SVGProps } from "react"
+import { useEffect, useRef } from "react"
+import type { ReactNode } from "react"
 
-function PlayIcon(props: SVGProps<SVGSVGElement>) {
+// ─── Clip data — using smaller test videos for guaranteed loading ────────────
+
+const CLIPS = [
+  {
+    label: "Cinematic drone intro",
+    tag: "AI Generated",
+    hue: 285,
+    aspect: "aspect-video",
+    src: "/12779446_3840_2160_24fps.mp4",
+  },
+  {
+    label: "Beat sync cut",
+    tag: "Auto Edit",
+    hue: 200,
+    aspect: "aspect-video",
+    src: "/15488611_1920_1080_30fps.mp4",
+  },
+  {
+    label: "AI Forest scene",
+    tag: "AI Generated",
+    hue: 170,
+    aspect: "aspect-video",
+    src: "/AI-Generated Blockbuster Scene_ _The Forest of Giants Awakens_ (Sora 2).mp4",
+  },
+  {
+    label: "Creative content",
+    tag: "4K Export",
+    hue: 300,
+    aspect: "aspect-video",
+    src: "/Cute or Creepy_ AI Fruit Babies Eating Real Fruit🍓👶_ The Ultimate Oddly Satisfying AI ASMR.mp4",
+  },
+  {
+    label: "Podcast highlight reel",
+    tag: "Auto Edit",
+    hue: 60,
+    aspect: "aspect-video",
+    src: "/videoplayback.mp4",
+  },
+  {
+    label: "Brand identity video",
+    tag: "4K Export",
+    hue: 20,
+    aspect: "aspect-video",
+    src: "/12779446_3840_2160_24fps.mp4",
+  },
+  {
+    label: "Studio audio mix",
+    tag: "Studio Audio",
+    hue: 140,
+    aspect: "aspect-video",
+    src: "/15488611_1920_1080_30fps.mp4",
+  },
+  {
+    label: "AI-powered editing",
+    tag: "AI Generated",
+    hue: 260,
+    aspect: "aspect-video",
+    src: "/videoplayback.mp4",
+  },
+]
+
+// ─── Single video clip card ───────────────────────────────────────────────────
+
+function ClipCard({ label, tag, hue, aspect, src }: typeof CLIPS[0]) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    
+    v.muted = true
+    v.playsInline = true
+    v.loop = true
+    v.defaultMuted = true
+    v.volume = 0
+    
+    const playPromise = v.play()
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        const tryPlay = () => {
+          v.play().catch(() => {})
+          document.removeEventListener('click', tryPlay)
+        }
+        document.addEventListener('click', tryPlay, { once: true })
+      })
+    }
+  }, [src])
+
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.03-6.86a1 1 0 0 0 0-1.72L9.5 4.28A1 1 0 0 0 8 5.14z" />
-    </svg>
+    <div className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-black/40 backdrop-blur-sm transition-all duration-300 hover:border-white/[0.12]">
+      <div className={`relative w-full ${aspect}`}>
+        <video
+          ref={videoRef}
+          src={src}
+          muted
+          autoPlay
+          loop
+          playsInline
+          preload="auto"
+          crossOrigin="anonymous"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
+      </div>
+    </div>
   )
 }
 
-const OUTPUTS = [
-  { label: "Cinematic intro",   hue: 285, w: "62%" },
-  { label: "Beat sync cut",     hue: 200, w: "45%" },
-  { label: "Aerial timelapse",  hue: 170, w: "78%" },
-  { label: "Noise removed",     hue: 60,  w: "55%" },
-]
+// ─── Scrolling column ─────────────────────────────────────────────────────────
 
-function GeneratingCanvas() {
-  const ref = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    const c = ref.current
-    if (!c) return
-    const ctx = c.getContext("2d")
-    if (!ctx) return
-    let raf: number
-    let t = 0
-
-    const draw = () => {
-      raf = requestAnimationFrame(draw)
-      t += 0.012
-      c.width = c.offsetWidth
-      c.height = c.offsetHeight
-      const w = c.width, h = c.height
-
-      ctx.clearRect(0, 0, w, h)
-
-      // rolling scanlines
-      for (let y = 0; y < h; y += 3) {
-        const alpha = 0.03 + 0.025 * Math.sin(y * 0.08 - t * 2)
-        ctx.fillStyle = `oklch(0.72 0.14 285 / ${alpha})`
-        ctx.fillRect(0, y, w, 1)
-      }
-
-      // centre orb pulse
-      const cx = w / 2, cy = h / 2
-      const r = 55 + Math.sin(t * 1.8) * 12
-      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 2.5)
-      g.addColorStop(0,   `oklch(0.72 0.18 285 / 0.28)`)
-      g.addColorStop(0.4, `oklch(0.65 0.15 260 / 0.14)`)
-      g.addColorStop(1,   `oklch(0.5  0.1  285 / 0)`)
-      ctx.beginPath()
-      ctx.arc(cx, cy, r * 2.5, 0, Math.PI * 2)
-      ctx.fillStyle = g
-      ctx.fill()
-
-      // orbiting particles
-      for (let i = 0; i < 6; i++) {
-        const angle = t * 0.9 + (i * Math.PI * 2) / 6
-        const rad   = 38 + Math.sin(t + i) * 8
-        const px = cx + Math.cos(angle) * rad
-        const py = cy + Math.sin(angle) * rad
-        ctx.beginPath()
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2)
-        ctx.fillStyle = `oklch(0.82 0.16 ${260 + i * 12} / 0.8)`
-        ctx.fill()
-      }
-
-      // waveform bar at bottom
-      const bars = 40, bw = w / bars
-      for (let i = 0; i < bars; i++) {
-        const bh = 6 + Math.abs(Math.sin(i * 0.45 + t * 3)) * 18
-        const alpha = 0.3 + Math.abs(Math.sin(i * 0.45 + t * 3)) * 0.5
-        ctx.fillStyle = `oklch(0.72 0.14 285 / ${alpha})`
-        ctx.fillRect(i * bw + 1, h - bh - 8, bw - 2, bh)
-      }
-    }
-    draw()
-    return () => cancelAnimationFrame(raf)
-  }, [])
-
-  return <canvas ref={ref} className="absolute inset-0 h-full w-full" />
-}
-
-export function EditorPreview() {
-  const [active, setActive] = useState(0)
-
+function ScrollColumn({ clips, duration, delay = 0 }: { clips: typeof CLIPS; duration: number; delay?: number }) {
   return (
-    <div className="flex flex-col gap-3">
-      {/* Main preview card */}
-      <div className="relative overflow-hidden rounded-xl border border-border bg-[oklch(0.13_0.008_270)] shadow-[0_0_0_1px_oklch(0.72_0.14_285/0.12),0_32px_64px_-16px_oklch(0_0_0/0.7)]">
-        {/* Topbar */}
-        <div className="flex items-center gap-2 border-b border-border bg-[oklch(0.16_0.006_265)] px-4 py-2">
-          <div className="flex gap-1.5">
-            <span className="size-2.5 rounded-full bg-foreground/10" />
-            <span className="size-2.5 rounded-full bg-foreground/10" />
-            <span className="size-2.5 rounded-full bg-foreground/10" />
-          </div>
-          <div className="ml-3 flex items-center gap-1.5 rounded-md bg-[oklch(0.72_0.14_285/0.12)] px-2.5 py-1">
-            <span className="relative flex size-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-70" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
-            </span>
-            <span className="text-[11px] font-medium text-primary">Generating…</span>
-          </div>
-          <span className="ml-auto font-mono text-[11px] text-muted-foreground">00:00:24 / 00:01:00</span>
-        </div>
-
-        {/* Canvas area */}
-        <div className="relative aspect-video w-full bg-[oklch(0.11_0.006_270)]">
-          <GeneratingCanvas />
-          {/* centre icon */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-            <div className="grid size-14 place-items-center rounded-full border border-primary/30 bg-primary/10 shadow-[0_0_24px_oklch(0.72_0.14_285/0.3)]">
-              <PlayIcon className="size-5 text-primary" />
-            </div>
-            <span className="rounded-full border border-border bg-background/40 px-3 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur-sm">
-              Cinematic drone intro · 4K · 60fps
-            </span>
-          </div>
-          {/* corner badge */}
-          <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-1 backdrop-blur-sm">
-            <svg viewBox="0 0 24 24" className="size-3 text-primary" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg>
-            <span className="text-[10px] font-medium text-foreground">AI</span>
-          </div>
-        </div>
-
-        {/* Prompt bar */}
-        <div className="flex items-center gap-2 border-t border-border bg-[oklch(0.15_0.006_265)] px-4 py-3">
-          <svg viewBox="0 0 24 24" className="size-4 shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
-          </svg>
-          <span className="flex-1 truncate font-mono text-[12px] text-muted-foreground">
-            Cinematic drone intro, golden hour, 4K...
-          </span>
-          <button className="shrink-0 rounded-md bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90">
-            Generate
-          </button>
-        </div>
-      </div>
-
-      {/* Output thumbnails */}
-      <div className="grid grid-cols-4 gap-2">
-        {OUTPUTS.map((o, i) => (
-          <button
-            key={o.label}
-            onClick={() => setActive(i)}
-            className={`group relative flex flex-col overflow-hidden rounded-lg border transition-all ${
-              active === i
-                ? "border-primary/60 shadow-[0_0_12px_oklch(0.72_0.14_285/0.25)]"
-                : "border-border hover:border-border/80"
-            }`}
-          >
-            {/* mini preview */}
-            <div
-              className="relative aspect-video w-full"
-              style={{ background: `oklch(0.14 0.01 ${o.hue})` }}
-            >
-              <div
-                className="absolute bottom-0 left-0 h-1 transition-all"
-                style={{
-                  width: o.w,
-                  background: `oklch(0.72 0.15 ${o.hue})`,
-                  boxShadow: `0 0 6px oklch(0.72 0.15 ${o.hue} / 0.6)`,
-                }}
-              />
-              {active === i && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <PlayIcon className="size-4" style={{ color: `oklch(0.82 0.14 ${o.hue})` }} />
-                </div>
-              )}
-            </div>
-            <div className="bg-card px-2 py-1.5">
-              <p className="truncate text-[10px] text-muted-foreground">{o.label}</p>
-            </div>
-          </button>
+    <div
+      className="flex flex-col gap-3 overflow-hidden"
+      style={{ maskImage: "linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)" }}
+    >
+      <div
+        className="flex flex-col gap-3"
+        style={{
+          animation: `scroll-up ${duration}s linear infinite`,
+          animationDelay: `${delay}s`,
+        }}
+      >
+        {[...clips, ...clips].map((clip, i) => (
+          <ClipCard key={i} {...clip} />
         ))}
       </div>
+    </div>
+  )
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+export function EditorPreview() {
+  const col1 = CLIPS.slice(0, 4)
+  const col2 = CLIPS.slice(4, 8)
+
+  return (
+    <div className="relative h-[580px] overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-br from-black/20 via-black/10 to-black/20 p-4 backdrop-blur-xl">
+      <div className="grid h-full grid-cols-2 gap-3">
+        <ScrollColumn clips={col1} duration={32} />
+        <ScrollColumn clips={col2} duration={26} delay={-8} />
+      </div>
+      <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/[0.05]" />
     </div>
   )
 }

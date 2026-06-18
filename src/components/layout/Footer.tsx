@@ -1,19 +1,39 @@
 const footerLinks = [
   {
     heading: "Product",
-    links: ["Features", "Pricing", "Changelog", "Roadmap"],
+    links: [
+      { label: "Features", href: "/#features" },
+      { label: "Pricing", href: "/#pricing" },
+      { label: "Editor", href: "/editor" },
+      { label: "Dashboard", href: "/dashboard" },
+    ],
   },
   {
     heading: "Resources",
-    links: ["Documentation", "Blog", "Status", "Community"],
+    links: [
+      { label: "Documentation", href: "#" },
+      { label: "Blog", href: "#" },
+      { label: "Status", href: "#" },
+      { label: "Community", href: "#" },
+    ],
   },
   {
     heading: "Company",
-    links: ["About", "Careers", "Press", "Contact"],
+    links: [
+      { label: "About", href: "#" },
+      { label: "Careers", href: "#" },
+      { label: "Press", href: "#" },
+      { label: "Contact", href: "#" },
+    ],
   },
   {
     heading: "Legal",
-    links: ["Privacy", "Terms", "Cookies", "Security"],
+    links: [
+      { label: "Privacy", href: "#" },
+      { label: "Terms", href: "#" },
+      { label: "Cookies", href: "#" },
+      { label: "Security", href: "#" },
+    ],
   },
 ]
 
@@ -42,9 +62,9 @@ export function Footer() {
             <div key={heading}>
               <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{heading}</p>
               <ul className="space-y-2">
-                {links.map((l) => (
-                  <li key={l}>
-                    <a href="#" className="text-[13px] text-muted-foreground transition-colors hover:text-foreground">{l}</a>
+                {links.map((link) => (
+                  <li key={link.label}>
+                    <a href={link.href} className="text-[13px] text-muted-foreground transition-colors hover:text-foreground">{link.label}</a>
                   </li>
                 ))}
               </ul>
