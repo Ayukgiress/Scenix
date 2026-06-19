@@ -1,38 +1,16 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
-
-// ─── Demo data ────────────────────────────────────────────────────────────────
-
-const PROJECTS = [
-  { id: 1, title: "Brand Reel 2025",       duration: "1:24", size: "2.1 GB", status: "exported",    hue: 285, updatedAt: "2h ago",    thumb: [285, 260] },
-  { id: 2, title: "Product Launch Teaser", duration: "0:32", size: "840 MB", status: "in-progress", hue: 200, updatedAt: "5h ago",    thumb: [200, 180] },
-  { id: 3, title: "Q4 Recap Montage",      duration: "3:10", size: "4.8 GB", status: "draft",       hue: 60,  updatedAt: "Yesterday", thumb: [60,  90]  },
-  { id: 4, title: "Podcast Ep. 12 Edit",   duration: "42:00",size: "1.2 GB", status: "exported",    hue: 140, updatedAt: "2 days ago",thumb: [140, 160] },
-  { id: 5, title: "Social Cut – Aug",      duration: "0:15", size: "310 MB", status: "in-progress", hue: 300, updatedAt: "3 days ago",thumb: [300, 280] },
-  { id: 6, title: "Event Highlight Reel",  duration: "5:48", size: "7.2 GB", status: "draft",       hue: 20,  updatedAt: "4 days ago",thumb: [20,  40]  },
-]
-
-const ACTIVITY = [
-  { icon: "export", text: "Brand Reel 2025 exported as MP4 4K",         time: "2h ago"    },
-  { icon: "edit",   text: "Product Launch Teaser — timeline updated",    time: "5h ago"    },
-  { icon: "ai",     text: "AI trim applied to Podcast Ep. 12 Edit",      time: "Yesterday" },
-  { icon: "export", text: "Q4 Recap Montage render started",             time: "2 days ago"},
-  { icon: "share",  text: "Social Cut – Aug shared with team",           time: "3 days ago"},
-  { icon: "edit",   text: "Event Highlight Reel created",                time: "4 days ago"},
-]
-
-const STATS = [
-  { label: "Total projects", value: "6",      sub: "+2 this month"     },
-  { label: "Storage used",   value: "16.5 GB",sub: "of 50 GB free"     },
-  { label: "Exports",        value: "24",     sub: "+8 this month"     },
-  { label: "AI generations", value: "41",     sub: "+12 this month"    },
-]
+import { useAuth } from "@/context/AuthContext"
+import { EmailVerificationBanner } from "@/components/EmailVerificationBanner"
+import { useDashboardStore } from "@/store/dashboardStore"
+import { realtimeService } from "@/services/realtimeService"
+import type { Project } from "@/types/dashboard"
 
 const NAV = [
   { label: "Home",     icon: "home",    path: "/dashboard" },
   { label: "Projects", icon: "grid",    path: "/dashboard" },
-  { label: "Generate", icon: "ai",      path: "/dashboard" },
-  { label: "Exports",  icon: "export",  path: "/dashboard" },
+  { label: "Media",    icon: "file",    path: "/media" },
+  { label: "Exports",  icon: "export",  path: "/exports" },
   { label: "Team",     icon: "team",    path: "/dashboard" },
   { label: "Settings", icon: "settings",path: "/dashboard" },
 ]
@@ -42,6 +20,7 @@ const NAV = [
 function Icon({ name, className = "size-4" }: { name: string; className?: string }) {
   const props = { viewBox: "0 0 24 24", className, fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round" as const, strokeLinejoin: "round" as const }
   switch (name) {
+    case "file":     return <svg {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
     case "home":     return <svg {...props}><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
     case "grid":     return <svg {...props}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     case "ai":       return <svg {...props}><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
@@ -64,20 +43,21 @@ function Icon({ name, className = "size-4" }: { name: string; className?: string
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    exported:      "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-    "in-progress": "bg-primary/10 text-primary border-primary/20",
-    draft:         "bg-muted text-muted-foreground border-border",
+    exported:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    processing: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    rendering:  "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    draft:      "bg-muted text-muted-foreground border-border",
   }
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${map[status] ?? map.draft}`}>
-      {status.replace("-", " ")}
+      {status}
     </span>
   )
 }
 
 // ─── Project card ─────────────────────────────────────────────────────────────
 
-function ProjectCard({ project }: { project: typeof PROJECTS[0] }) {
+function ProjectCard({ project }: { project: Project }) {
   const [hover, setHover] = useState(false)
   return (
     <div
@@ -120,6 +100,21 @@ function ProjectCard({ project }: { project: typeof PROJECTS[0] }) {
           <StatusBadge status={project.status} />
           <span className="text-[11px] text-muted-foreground">{project.size}</span>
         </div>
+        {/* Progress bar for rendering/processing */}
+        {(project.status === "rendering" || project.status === "processing") && project.progress !== undefined && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-muted-foreground">{project.status === "rendering" ? "Rendering" : "Processing"}...</span>
+              <span className="font-mono text-foreground">{project.progress}%</span>
+            </div>
+            <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${project.progress}%` }}
+              />
+            </div>
+          </div>
+        )}
         <p className="text-[11px] text-muted-foreground">Updated {project.updatedAt}</p>
       </div>
     </div>
@@ -130,10 +125,49 @@ function ProjectCard({ project }: { project: typeof PROJECTS[0] }) {
 
 export function DashboardPage() {
   const [activeNav, setActiveNav] = useState("Projects")
-  const [filter, setFilter] = useState<"all" | "exported" | "in-progress" | "draft">("all")
+  const [filter, setFilter] = useState<"all" | "exported" | "processing" | "rendering" | "draft">("all")
   const [search, setSearch] = useState("")
+  const { user, logout, accessToken } = useAuth()
 
-  const filtered = PROJECTS.filter((p) => {
+  const {
+    projects,
+    activities,
+    stats,
+    loading,
+    error,
+    fetchProjects,
+    fetchMedia,
+    fetchExports,
+    createProject,
+    setError
+  } = useDashboardStore()
+
+  // Fetch data on mount
+  useEffect(() => {
+    if (accessToken) {
+      fetchProjects(accessToken)
+      fetchMedia(accessToken)
+      fetchExports(accessToken)
+    }
+  }, [accessToken, fetchProjects, fetchMedia, fetchExports])
+
+  // Start real-time updates
+  useEffect(() => {
+    realtimeService.start()
+    return () => realtimeService.stop()
+  }, [])
+
+  const handleCreateProject = async () => {
+    if (!accessToken) return
+    const title = prompt('Project name:')
+    if (title?.trim()) {
+      await createProject(accessToken, title.trim())
+    }
+  }
+
+  const emailVerified = (user as any)?.emailVerified ?? true
+
+  const filtered = projects.filter((p) => {
     const matchFilter = filter === "all" || p.status === filter
     const matchSearch = p.title.toLowerCase().includes(search.toLowerCase())
     return matchFilter && matchSearch
@@ -160,8 +194,9 @@ export function DashboardPage() {
         {/* Nav */}
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {NAV.map((item) => (
-            <button
+            <Link
               key={item.label}
+              to={item.path}
               onClick={() => setActiveNav(item.label)}
               className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors ${
                 activeNav === item.label
@@ -171,7 +206,7 @@ export function DashboardPage() {
             >
               <Icon name={item.icon} className="size-4" />
               {item.label}
-            </button>
+            </Link>
           ))}
         </nav>
 
@@ -179,13 +214,13 @@ export function DashboardPage() {
         <div className="border-t border-border p-3">
           <div className="flex items-center gap-2.5 rounded-md px-2 py-2">
             <div className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
-              JD
+              {user?.name?.charAt(0).toUpperCase() ?? "U"}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-medium text-foreground">Jane Doe</p>
+              <p className="truncate text-[12px] font-medium text-foreground">{user?.name ?? "User"}</p>
               <p className="truncate text-[10px] text-muted-foreground">Free plan</p>
             </div>
-            <button className="shrink-0 text-muted-foreground transition-colors hover:text-foreground">
+            <button onClick={() => logout()} className="shrink-0 text-muted-foreground transition-colors hover:text-foreground">
               <Icon name="logout" className="size-4" />
             </button>
           </div>
@@ -194,12 +229,14 @@ export function DashboardPage() {
 
       {/* ── Main ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Email verification banner */}
+        {!emailVerified && user?.email && <EmailVerificationBanner email={user.email} />}
 
         {/* Topbar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-6">
           <div>
             <h1 className="text-[15px] font-semibold text-foreground">Dashboard</h1>
-            <p className="text-[12px] text-muted-foreground">Welcome back, Jane 👋</p>
+            <p className="text-[12px] text-muted-foreground">Welcome back, {user?.name?.split(" ")[0] ?? "there"} 👋</p>
           </div>
           <div className="flex items-center gap-2">
             {/* Search */}
@@ -229,29 +266,62 @@ export function DashboardPage() {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
+          {error && (
+            <div className="mx-auto max-w-7xl p-6">
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-red-400">
+                <p className="text-sm">{error}</p>
+                <button 
+                  onClick={() => setError(null)} 
+                  className="mt-2 text-xs underline hover:no-underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {loading && (
+            <div className="flex h-32 items-center justify-center">
+              <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          )}
+          
           <div className="mx-auto max-w-7xl space-y-8 p-6">
 
             {/* Stats */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {STATS.map((s) => (
-                <div key={s.label} className="rounded-xl border border-border bg-card p-4">
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{s.label}</p>
-                  <p className="mt-1.5 text-[26px] font-semibold tracking-tight text-foreground">{s.value}</p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">{s.sub}</p>
-                </div>
-              ))}
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total projects</p>
+                <p className="mt-1.5 text-[26px] font-semibold tracking-tight text-foreground">{stats.totalProjects}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">+2 this month</p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Storage used</p>
+                <p className="mt-1.5 text-[26px] font-semibold tracking-tight text-foreground">{stats.storageUsed} GB</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">of {stats.storageTotal} GB free</p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Exports</p>
+                <p className="mt-1.5 text-[26px] font-semibold tracking-tight text-foreground">{stats.exports}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">+8 this month</p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">AI generations</p>
+                <p className="mt-1.5 text-[26px] font-semibold tracking-tight text-foreground">{stats.aiGenerations}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">+12 this month</p>
+              </div>
             </div>
 
             {/* Storage bar */}
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center justify-between">
                 <p className="text-[13px] font-medium text-foreground">Storage</p>
-                <p className="text-[12px] text-muted-foreground">16.5 GB <span className="text-muted-foreground/50">/ 50 GB</span></p>
+                <p className="text-[12px] text-muted-foreground">{stats.storageUsed} GB <span className="text-muted-foreground/50">/ {stats.storageTotal} GB</span></p>
               </div>
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full transition-all"
-                  style={{ width: "33%", background: "linear-gradient(90deg, oklch(0.72 0.14 285), oklch(0.65 0.15 220))" }}
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${(stats.storageUsed / stats.storageTotal) * 100}%`, background: "linear-gradient(90deg, oklch(0.72 0.14 285), oklch(0.65 0.15 220))" }}
                 />
               </div>
               <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
@@ -270,7 +340,7 @@ export function DashboardPage() {
                   <h2 className="text-[14px] font-semibold text-foreground">Recent projects</h2>
                   {/* Filter pills */}
                   <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5 text-[11px]">
-                    {(["all", "exported", "in-progress", "draft"] as const).map((f) => (
+                    {(["all", "exported", "processing", "rendering", "draft"] as const).map((f) => (
                       <button
                         key={f}
                         onClick={() => setFilter(f)}
@@ -278,7 +348,7 @@ export function DashboardPage() {
                           filter === f ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
-                        {f === "all" ? "All" : f.replace("-", " ")}
+                        {f}
                       </button>
                     ))}
                   </div>
@@ -293,27 +363,33 @@ export function DashboardPage() {
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {filtered.map((p) => <ProjectCard key={p.id} project={p} />)}
                     {/* New project card */}
-                    <Link
-                      to="/editor"
+                    <button
+                      onClick={handleCreateProject}
                       className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
                     >
                       <span className="grid size-10 place-items-center rounded-full border border-border">
                         <Icon name="plus" className="size-5" />
                       </span>
                       <span className="text-[12px]">New project</span>
-                    </Link>
+                    </button>
                   </div>
                 )}
               </div>
 
               {/* Activity feed */}
               <div>
-                <h2 className="mb-4 text-[14px] font-semibold text-foreground">Activity</h2>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-[14px] font-semibold text-foreground">Activity</h2>
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <div className="size-1.5 animate-pulse rounded-full bg-emerald-400" />
+                    Live
+                  </div>
+                </div>
                 <div className="rounded-xl border border-border bg-card">
-                  {ACTIVITY.map((a, i) => (
+                  {activities.slice(0, 6).map((a, i) => (
                     <div
-                      key={i}
-                      className={`flex items-start gap-3 px-4 py-3 ${i < ACTIVITY.length - 1 ? "border-b border-border" : ""}`}
+                      key={a.id}
+                      className={`flex items-start gap-3 px-4 py-3 ${i < Math.min(activities.length, 6) - 1 ? "border-b border-border" : ""}`}
                     >
                       <div className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-full border ${
                         a.icon === "export" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" :

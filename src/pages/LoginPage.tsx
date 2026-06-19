@@ -1,9 +1,35 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { HeroBg } from "@/components/landing/HeroBg"
+import { useAuth } from "@/context/AuthContext"
+import { api } from "@/lib/api"
 
 export function LoginPage() {
   const [show, setShow] = useState(false)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const { login } = useAuth()
+  const navigate = useNavigate()
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    setLoading(true)
+    try {
+      await login(email, password)
+      navigate("/dashboard")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGoogleLogin = () => {
+    window.location.href = api.googleAuthUrl
+  }
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -55,7 +81,7 @@ export function LoginPage() {
 
           {/* OAuth */}
           <div className="mt-7 flex flex-col gap-2">
-            <button className="flex h-10 w-full items-center justify-center gap-2.5 rounded-md border border-border bg-card text-[13px] font-medium text-foreground transition-colors hover:bg-muted">
+            <button type="button" onClick={handleGoogleLogin} className="flex h-10 w-full items-center justify-center gap-2.5 rounded-md border border-border bg-card text-[13px] font-medium text-foreground transition-colors hover:bg-muted">
               <svg viewBox="0 0 24 24" className="size-4" fill="none">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -78,13 +104,22 @@ export function LoginPage() {
             <div className="h-px flex-1 bg-border" />
           </div>
 
+          {error && (
+            <div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-500">
+              {error}
+            </div>
+          )}
+
           {/* Email / password */}
-          <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); window.location.href = "/dashboard" }}>
+          <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-1.5">
               <label className="text-[12px] font-medium text-foreground">Email</label>
               <input
                 type="email"
                 placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
                 className="h-10 w-full rounded-md border border-border bg-card px-3 text-[13px] text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </div>
@@ -99,6 +134,9 @@ export function LoginPage() {
                 <input
                   type={show ? "text" : "password"}
                   placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
                   className="h-10 w-full rounded-md border border-border bg-card px-3 pr-10 text-[13px] text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
                 <button
@@ -123,9 +161,10 @@ export function LoginPage() {
             </div>
             <button
               type="submit"
-              className="mt-1 h-10 w-full rounded-md bg-primary text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              disabled={loading}
+              className="mt-1 h-10 w-full rounded-md bg-primary text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              Sign in
+              {loading ? "Signing in..." : "Sign in"}
             </button>
           </form>
 
