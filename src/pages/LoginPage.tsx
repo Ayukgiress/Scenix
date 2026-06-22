@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { HeroBg } from "@/components/landing/HeroBg"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 import { api } from "@/lib/api"
 
 export function LoginPage() {

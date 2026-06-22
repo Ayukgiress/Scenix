@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 import { api, Export } from "@/lib/api"
 import { DashboardLayout } from "@/layouts/DashboardLayout"
 
@@ -118,7 +118,22 @@ export function ExportsPage() {
   }
 
   useEffect(() => {
-    fetchExports()
+    const loadExports = async () => {
+      if (!accessToken) return
+      try {
+        setLoading(true)
+        const data = await api.getExports(accessToken, {
+          status: statusFilter === "all" ? undefined : statusFilter
+        })
+        setExports(data)
+      } catch (error) {
+        console.error('Failed to fetch exports:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadExports()
   }, [accessToken, statusFilter])
 
   const handleCancel = async (id: string) => {

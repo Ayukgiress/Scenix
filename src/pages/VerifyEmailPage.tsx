@@ -9,24 +9,27 @@ export function VerifyEmailPage() {
   const [message, setMessage] = useState("")
 
   useEffect(() => {
-    const token = searchParams.get("token")
-    if (!token) {
-      setStatus("error")
-      setMessage("No verification token provided")
-      return
-    }
+    const verifyToken = async () => {
+      const token = searchParams.get("token")
+      if (!token) {
+        setStatus("error")
+        setMessage("No verification token provided")
+        return
+      }
 
-    api.verifyEmail(token)
-      .then((res) => {
+      try {
+        const res = await api.verifyEmail(token)
         setStatus("success")
         setMessage(res.message || "Email verified successfully!")
-      })
-      .catch((err) => {
+      } catch (err) {
         setStatus("error")
-        const errorMsg = err.message || "Verification failed. The token may be invalid or expired."
+        const errorMsg = err instanceof Error ? err.message : "Verification failed. The token may be invalid or expired."
         setMessage(errorMsg)
         console.error("Verification error:", err)
-      })
+      }
+    }
+
+    verifyToken()
   }, [searchParams, navigate])
 
   return (

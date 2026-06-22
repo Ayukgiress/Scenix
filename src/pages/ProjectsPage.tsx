@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 import { api, Project as APIProject } from "@/lib/api"
 import { DashboardLayout } from "@/layouts/DashboardLayout"
 
@@ -136,6 +136,9 @@ export function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [newTitle, setNewTitle] = useState("")
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [createTitle, setCreateTitle] = useState("")
+  const [creating, setCreating] = useState(false)
   const { accessToken } = useAuth()
 
   const fetchProjects = async () => {
@@ -164,19 +167,51 @@ export function ProjectsPage() {
   }
 
   useEffect(() => {
-    fetchProjects()
+    const loadProjects = async () => {
+      if (!accessToken) return
+      try {
+        setLoading(true)
+        const data = await api.getProjects(accessToken, {
+          search: search || undefined,
+          status: statusFilter === "all" ? undefined : statusFilter
+        })
+        
+        const projects: Project[] = data.map((p, i) => ({
+          ...p,
+          hue: 60 + (i * 70) % 300,
+          thumb: [60 + (i * 70) % 300, 40 + (i * 50) % 280],
+          duration: "0:00", // Will be calculated from clips
+          size: "0 MB" // Will be calculated from media
+        }))
+        
+        setProjects(projects)
+      } catch (error) {
+        console.error('Failed to fetch projects:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadProjects()
   }, [accessToken, search, statusFilter])
 
-  const handleCreateProject = async () => {
-    if (!accessToken) return
-    const title = prompt('Project name:')
-    if (title?.trim()) {
-      try {
-        await api.createProject(accessToken, { title: title.trim() })
-        await fetchProjects()
-      } catch (error) {
-        console.error('Failed to create project:', error)
-      }
+  const handleCreateProject = () => {
+    setCreateTitle("")
+    setShowCreateDialog(true)
+  }
+
+  const handleConfirmCreate = async () => {
+    if (!accessToken || !createTitle.trim()) return
+    try {
+      setCreating(true)
+      await api.createProject(accessToken, { title: createTitle.trim() })
+      await fetchProjects()
+      setShowCreateDialog(false)
+      setCreateTitle("")
+    } catch (error) {
+      console.error('Failed to create project:', error)
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -285,6 +320,44 @@ export function ProjectsPage() {
           )}
         </div>
 
+        {/* Create Dialog */}
+        {showCreateDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
+              <h3 className="mb-4 text-lg font-semibold">Create New Project</h3>
+              <input
+                type="text"
+                value={createTitle}
+                onChange={(e) => setCreateTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && createTitle.trim()) handleConfirmCreate()
+                  if (e.key === "Escape") setShowCreateDialog(false)
+                }}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="Enter project name"
+                autoFocus
+                disabled={creating}
+              />
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowCreateDialog(false)}
+                  disabled={creating}
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmCreate}
+                  disabled={!createTitle.trim() || creating}
+                  className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                >
+                  {creating ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Edit Dialog */}
         {editingProject && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -294,6 +367,13 @@ export function ProjectsPage() {
                 type="text"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newTitle.trim()) handleSaveEdit()
+                  if (e.key === "Escape") {
+                    setEditingProject(null)
+                    setNewTitle("")
+                  }
+                }}
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 placeholder="Project name"
                 autoFocus

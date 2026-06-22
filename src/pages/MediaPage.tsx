@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 import { api, Media } from "@/lib/api"
 import { DashboardLayout } from "@/layouts/DashboardLayout"
 
@@ -89,7 +89,23 @@ export function MediaPage() {
   }
 
   useEffect(() => {
-    fetchMedia()
+    const loadMedia = async () => {
+      if (!accessToken) return
+      try {
+        setLoading(true)
+        const data = await api.getMedia(accessToken, {
+          search: search || undefined,
+          type: typeFilter === "all" ? undefined : typeFilter
+        })
+        setMedia(data)
+      } catch (error) {
+        console.error('Failed to fetch media:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadMedia()
   }, [accessToken, search, typeFilter])
 
   const handleDelete = async (id: string) => {

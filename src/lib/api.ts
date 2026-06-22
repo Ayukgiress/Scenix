@@ -34,7 +34,7 @@ export interface Project {
   id: string
   title: string
   status: string
-  settings?: any
+  settings?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -71,6 +71,15 @@ export interface Clip {
   trimStart: number
   trimEnd: number
   position: number
+}
+
+export interface CloudinarySignature {
+  cloudName: string
+  apiKey: string
+  timestamp: number
+  signature: string
+  folder: string
+  uploadPreset?: string
 }
 
 export const api = {
@@ -150,7 +159,7 @@ export const api = {
   },
 
   // Projects endpoints
-  async createProject(token: string, data: { title: string; settings?: any }): Promise<Project> {
+  async createProject(token: string, data: { title: string; settings?: Record<string, unknown> }): Promise<Project> {
     const res = await fetch(`${API_URL}/projects`, {
       method: "POST",
       headers: getAuthHeaders(token),
@@ -187,7 +196,7 @@ export const api = {
     return res.json()
   },
 
-  async updateProject(token: string, id: string, data: { title?: string; settings?: any }): Promise<Project> {
+  async updateProject(token: string, id: string, data: { title?: string; settings?: Record<string, unknown> }): Promise<Project> {
     const res = await fetch(`${API_URL}/projects/${id}`, {
       method: "PATCH",
       headers: getAuthHeaders(token),
@@ -208,6 +217,16 @@ export const api = {
   // Media endpoints
   async createMedia(token: string, data: { filename: string; type: string; size: number; url: string; projectId?: string; duration?: number }): Promise<Media> {
     const res = await fetch(`${API_URL}/media`, {
+      method: "POST",
+      headers: getAuthHeaders(token),
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+
+  async createCloudinaryUpload(token: string, data: { folder?: string }): Promise<CloudinarySignature> {
+    const res = await fetch(`${API_URL}/media/uploads/cloudinary`, {
       method: "POST",
       headers: getAuthHeaders(token),
       body: JSON.stringify(data),
@@ -243,6 +262,14 @@ export const api = {
     return res.json()
   },
 
+  async getMediaUrl(token: string, id: string): Promise<{ url: string }> {
+    const res = await fetch(`${API_URL}/media/${id}/url`, {
+      headers: getAuthHeaders(token),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+
   async deleteMedia(token: string, id: string): Promise<void> {
     const res = await fetch(`${API_URL}/media/${id}`, {
       method: "DELETE",
@@ -252,7 +279,7 @@ export const api = {
   },
 
   // Export endpoints
-  async createExport(token: string, data: { projectId: string; format: string; quality: string; settings?: any }): Promise<Export> {
+  async createExport(token: string, data: { projectId: string; format: string; quality: string; settings?: Record<string, unknown> }): Promise<Export> {
     const res = await fetch(`${API_URL}/export`, {
       method: "POST",
       headers: getAuthHeaders(token),
@@ -333,7 +360,7 @@ export const api = {
     if (!res.ok) throw new Error(await res.text())
   },
 
-  async getProjectActivity(token: string, projectId: string, params?: { limit?: number; offset?: number }): Promise<any[]> {
+  async getProjectActivity(token: string, projectId: string, params?: { limit?: number; offset?: number }): Promise<Array<Record<string, unknown>>> {
     const query = new URLSearchParams()
     if (params?.limit) query.set('limit', params.limit.toString())
     if (params?.offset) query.set('offset', params.offset.toString())
@@ -346,4 +373,43 @@ export const api = {
   },
 
   googleAuthUrl: `${API_URL}/auth/google`,
+}
+
+// Cloudinary direct upload helper
+export async function uploadToCloudinary(
+  file: File,
+  signature: CloudinarySignature,
+  onProgress?: (percent: number) => void,
+): Promise<{ secure_url: string; public_id: string; resource_type: string; duration?: number; bytes: number }> {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("api_key", signature.apiKey)
+    formData.append("timestamp", String(signature.timestamp))
+    formData.append("signature", signature.signature)
+    formData.append("folder", signature.folder)
+    if (signature.uploadPreset) formData.append("upload_preset", signature.uploadPreset)
+
+    const xhr = new XMLHttpRequest()
+    const resourceType = file.type.startsWith("video") ? "video" : file.type.startsWith("audio") ? "video" : "image"
+    xhr.open("POST", `https://api.cloudinary.com/v1_1/${signature.cloudName}/${resourceType}/upload`)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText))
+        } catch (err) {
+          reject(err)
+        }
+      } else {
+        reject(new Error(`Cloudinary upload failed: ${xhr.responseText}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error("Network error during Cloudinary upload"))
+    xhr.send(formData)
+  })
 }

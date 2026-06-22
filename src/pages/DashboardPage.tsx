@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 import { EmailVerificationBanner } from "@/components/EmailVerificationBanner"
 import { useDashboardStore } from "@/store/dashboardStore"
 import { realtimeService } from "@/services/realtimeService"
@@ -165,7 +165,7 @@ export function DashboardPage() {
     }
   }
 
-  const emailVerified = (user as any)?.emailVerified ?? true
+  const emailVerified = (user as { emailVerified?: boolean })?.emailVerified ?? true
 
   const filtered = projects.filter((p) => {
     const matchFilter = filter === "all" || p.status === filter

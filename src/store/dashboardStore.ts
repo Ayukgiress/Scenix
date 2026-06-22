@@ -1,13 +1,14 @@
 import { create } from "zustand"
 import type { Project, Activity, Stats } from "@/types/dashboard"
+import type { Media, Export } from "@/lib/api"
 import { api } from "@/lib/api"
 
 interface DashboardState {
   projects: Project[]
   activities: Activity[]
   stats: Stats
-  media: any[]
-  exports: any[]
+  media: Media[]
+  exports: Export[]
   loading: boolean
   error: string | null
   
@@ -22,13 +23,6 @@ interface DashboardState {
   updateProjectStatus: (id: string, status: Project["status"]) => void
   incrementStat: (key: keyof Omit<Stats, "storageUsed" | "storageTotal">) => void
   setError: (error: string | null) => void
-}
-
-function formatFileSize(bytes: number): string {
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  if (bytes === 0) return '0 B'
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i]
 }
 
 function timeAgo(date: string): string {

@@ -1,6 +1,6 @@
-import { ReactNode, useState } from "react"
+import { ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 
 const NAV = [
   { label: "Home", icon: "home", path: "/dashboard" },
@@ -32,10 +32,6 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation()
   const { user, logout } = useAuth()
-  const [activeNav, setActiveNav] = useState(() => {
-    const current = NAV.find(item => item.path === location.pathname)
-    return current?.label || "Projects"
-  })
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -60,7 +56,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <Link
               key={item.label}
               to={item.path}
-              onClick={() => setActiveNav(item.label)}
               className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors ${
                 location.pathname === item.path
                   ? "bg-primary/10 text-primary"

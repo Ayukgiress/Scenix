@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react"
 import { useEditorStore } from "@/store/editorStore"
 
-export function usePlaybackEngine(videoRef: React.RefObject<HTMLVideoElement>) {
+export function usePlaybackEngine(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const isPlaying = useEditorStore((state) => state.playback.isPlaying)
   const currentTime = useEditorStore((state) => state.playback.currentTime)
   const setCurrentTime = useEditorStore((state) => state.setCurrentTime)
   const pause = useEditorStore((state) => state.pause)
   const duration = useEditorStore((state) => state.playback.duration)
 
-  const rafRef = useRef<number>()
+  const rafRef = useRef<number | undefined>(undefined)
   const lastTimeRef = useRef(0)
 
   useEffect(() => {

@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 
 export function useTypewriter(phrases: string[], speed = 38, pause = 2200) {
-  const [display, setDisplay] = useState("")
   const [phraseIdx, setPhraseIdx] = useState(0)
   const [charIdx, setCharIdx] = useState(0)
   const [deleting, setDeleting] = useState(false)
@@ -21,14 +20,18 @@ export function useTypewriter(phrases: string[], speed = 38, pause = 2200) {
       return () => clearTimeout(t)
     }
     if (deleting && charIdx === 0) {
-      setDeleting(false)
-      setPhraseIdx((i) => (i + 1) % phrases.length)
+      const t = setTimeout(() => {
+        setDeleting(false)
+        setPhraseIdx((i) => (i + 1) % phrases.length)
+      }, 0)
+      return () => clearTimeout(t)
     }
   }, [charIdx, deleting, phraseIdx, phrases, speed, pause])
 
-  useEffect(() => {
-    setDisplay(phrases[phraseIdx].slice(0, charIdx))
-  }, [charIdx, phraseIdx, phrases])
+  const display = useMemo(
+    () => phrases[phraseIdx].slice(0, charIdx),
+    [charIdx, phraseIdx, phrases]
+  )
 
   return display
 }

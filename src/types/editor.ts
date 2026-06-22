@@ -17,7 +17,7 @@ export interface Effect {
   id: string
   type: "filter" | "transition" | "overlay"
   name: string
-  params: Record<string, any>
+  params: Record<string, unknown>
 }
 
 export interface Transform {

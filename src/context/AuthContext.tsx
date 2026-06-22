@@ -1,17 +1,6 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react"
+import { useState, useEffect, ReactNode } from "react"
 import { api, AuthResponse } from "@/lib/api"
-
-interface AuthContextType {
-  user: AuthResponse["user"] | null
-  accessToken: string | null
-  isLoading: boolean
-  login: (email: string, password: string) => Promise<void>
-  register: (name: string, email: string, password: string) => Promise<{ message: string }>
-  logout: () => Promise<void>
-  refreshAuth: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+import { AuthContext } from "@/context/authContextType"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthResponse["user"] | null>(null)
@@ -19,33 +8,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem("accessToken")
-    const refreshToken = localStorage.getItem("refreshToken")
-    
-    if (token && refreshToken) {
-      api.getMe(token)
-        .then(userData => {
+    const initAuth = async () => {
+      const token = localStorage.getItem("accessToken")
+      const refreshToken = localStorage.getItem("refreshToken")
+      
+      if (token && refreshToken) {
+        try {
+          const userData = await api.getMe(token)
           setUser(userData)
           setAccessToken(token)
-        })
-        .catch(() => {
-          api.refresh(refreshToken)
-            .then(data => {
-              setUser(data.user)
-              setAccessToken(data.accessToken)
-              localStorage.setItem("accessToken", data.accessToken)
-              localStorage.setItem("refreshToken", data.refreshToken)
-            })
-            .catch(() => {
-              localStorage.removeItem("accessToken")
-              localStorage.removeItem("refreshToken")
-            })
-            .finally(() => setIsLoading(false))
-        })
-        .finally(() => setIsLoading(false))
-    } else {
+        } catch {
+          try {
+            const data = await api.refresh(refreshToken)
+            setUser(data.user)
+            setAccessToken(data.accessToken)
+            localStorage.setItem("accessToken", data.accessToken)
+            localStorage.setItem("refreshToken", data.refreshToken)
+          } catch {
+            localStorage.removeItem("accessToken")
+            localStorage.removeItem("refreshToken")
+          }
+        }
+      }
       setIsLoading(false)
     }
+
+    initAuth()
   }, [])
 
   const login = async (email: string, password: string) => {
@@ -86,10 +74,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider")
-  return ctx
 }
