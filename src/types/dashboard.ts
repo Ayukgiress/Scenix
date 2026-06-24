@@ -1,9 +1,18 @@
+// Backend ProjectStatus enum: DRAFT | IN_PROGRESS | EXPORTED | PUBLISHED | ARCHIVED
+// We map these to display-friendly keys used by the dashboard UI.
+export type ProjectStatus =
+  | "DRAFT"
+  | "IN_PROGRESS"
+  | "EXPORTED"
+  | "PUBLISHED"
+  | "ARCHIVED"
+
 export interface Project {
   id: string
   title: string
   duration: string
   size: string
-  status: "exported" | "processing" | "rendering" | "draft"
+  status: ProjectStatus | string
   progress?: number
   hue: number
   updatedAt: string

@@ -159,6 +159,7 @@ function ClipElement({ clip, zoom }: { clip: LocalClip; zoom: number }) {
 
   return (
     <div
+      data-clip
       className={`group absolute rounded transition-shadow ${
         isSelected
           ? "ring-2 ring-primary ring-offset-1 ring-offset-background"
@@ -212,13 +213,25 @@ export function Timeline() {
   const setZoom = useEditorStore((s) => s.setZoom)
   const selectClip = useEditorStore((s) => s.selectClip)
 
-  const timelineWidth = Math.max(duration * PIXEL_PER_SECOND * zoom, 1000)
+  // Make the timeline scrollable even when empty so the playhead
+  // is visible and clicks register on a meaningful range.
+  const visibleSeconds = Math.max(duration, 30)
+  const timelineWidth = Math.max(visibleSeconds * PIXEL_PER_SECOND * zoom, 1000)
+  const rulerHeight = 24
+  const tracksHeight = TRACKS.length * TRACK_HEIGHT
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return
+    // Only react to clicks on the empty timeline background. Clicks that
+    // originate from a clip (or any of its resize handles / delete button)
+    // should NOT deselect the clip — they bubble up here as `click` events
+    // even though `mousedown` was stopped in the clip's own handler.
+    const target = e.target as HTMLElement
+    if (target.closest("[data-clip]") || target.closest("[data-track-label]")) {
+      return
+    }
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left + (e.currentTarget.scrollLeft || 0)
-    const time = x / (PIXEL_PER_SECOND * zoom)
+    const time = Math.max(0, x / (PIXEL_PER_SECOND * zoom))
     seek(time)
     selectClip(null)
   }
@@ -347,7 +360,7 @@ export function Timeline() {
             className="pointer-events-none absolute top-0 z-10 w-0.5 bg-primary shadow-lg"
             style={{
               left: `${currentTime * PIXEL_PER_SECOND * zoom}px`,
-              height: `${TRACKS.length * TRACK_HEIGHT + 24}px`,
+              height: `${rulerHeight + tracksHeight}px`,
             }}
           >
             <div className="absolute -top-1 left-1/2 size-3 -translate-x-1/2 rounded-full bg-primary" />

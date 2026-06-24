@@ -87,8 +87,17 @@ export function EditorTopbar() {
   const [savingTitle, setSavingTitle] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Tick counter — updated on a timer so the "Saved Xs ago" label
+  // refreshes without needing the underlying save state to change.
+  const [, setTick] = useState(0)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const shareRef = useRef<HTMLDivElement>(null)
+
+  // Re-render the "Saved Xs ago" label every 15s so it stays accurate
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 15000)
+    return () => window.clearInterval(id)
+  }, [])
 
   useEffect(() => {
     if (editingTitle) titleInputRef.current?.focus()

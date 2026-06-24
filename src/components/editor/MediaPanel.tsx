@@ -76,6 +76,8 @@ export function MediaPanel() {
   const syncAddClip = useEditorStore((s) => s.syncAddClip)
   const clips = useEditorStore((s) => s.clips)
   const projectId = useEditorStore((s) => s.projectId)
+  const selectClip = useEditorStore((s) => s.selectClip)
+  const seek = useEditorStore((s) => s.seek)
 
   const [uploadingCount, setUploadingCount] = useState(0)
   const [search, setSearch] = useState("")
@@ -112,6 +114,12 @@ export function MediaPanel() {
         const localDuration = await readMediaDuration(file, kind)
         const signature = await api.createCloudinaryUpload(accessToken, {
           folder: `scenix/projects/${projectId}`,
+          filename: file.name,
+          type: (kind === "audio"
+            ? "AUDIO"
+            : kind === "video"
+              ? "VIDEO"
+              : "IMAGE") as "IMAGE" | "VIDEO" | "AUDIO" | "OTHER",
         })
         const uploaded = await uploadToCloudinary(file, signature, (pct) => {
           updateMediaAssetLocal(tempId, { progress: pct })
@@ -213,6 +221,15 @@ export function MediaPanel() {
     }
     addClipLocal(localClip)
     await syncAddClip(localClip, accessToken)
+    // Surface the new clip in the Properties panel and jump the playhead
+    // to its start so the user immediately sees where it landed.
+    const latest = useEditorStore.getState().clips.find(
+      (c) => c.id === localClip.id,
+    )
+    if (latest) {
+      selectClip(latest.id)
+      seek(latest.startTime)
+    }
   }
 
   const handleDeleteAsset = async (asset: LocalMedia) => {

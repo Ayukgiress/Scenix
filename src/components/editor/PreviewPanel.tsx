@@ -85,9 +85,7 @@ export function PreviewPanel() {
   const playbackRate = useEditorStore((s) => s.playback.playbackRate)
   const clips = useEditorStore((s) => s.clips)
   const togglePlay = useEditorStore((s) => s.togglePlay)
-  const pause = useEditorStore((s) => s.pause)
   const seek = useEditorStore((s) => s.seek)
-  const setCurrentTime = useEditorStore((s) => s.setCurrentTime)
   const setVolume = useEditorStore((s) => s.setVolume)
   const selectClip = useEditorStore((s) => s.selectClip)
 
@@ -170,7 +168,9 @@ export function PreviewPanel() {
     audio.volume = (activeAudioClip.volume ?? 1) * volume
   }, [activeAudioClip, currentTime, volume])
 
-  // Drive playback via requestAnimationFrame for smooth frame-accurate updates
+  // Drive playback via requestAnimationFrame for smooth frame-accurate updates.
+  // We read `duration` fresh inside the loop so a changing timeline duration
+  // (clips added/removed) is picked up without re-creating the RAF loop.
   useEffect(() => {
     if (!isPlaying) {
       videoRef.current?.pause()
@@ -183,12 +183,14 @@ export function PreviewPanel() {
     const step = (now: number) => {
       const dt = (now - last) / 1000
       last = now
-      const next = useEditorStore.getState().playback.currentTime + dt
-      if (duration > 0 && next >= duration) {
-        pause()
-        setCurrentTime(duration)
+      const store = useEditorStore.getState()
+      const dur = store.playback.duration
+      const next = store.playback.currentTime + dt
+      if (dur > 0 && next >= dur) {
+        store.pause()
+        store.setCurrentTime(dur)
       } else {
-        setCurrentTime(next)
+        store.setCurrentTime(next)
       }
       raf = requestAnimationFrame(step)
     }
@@ -203,7 +205,7 @@ export function PreviewPanel() {
     })
 
     return () => cancelAnimationFrame(raf)
-  }, [isPlaying, duration, pause, setCurrentTime])
+  }, [isPlaying])
 
   // Apply playback rate
   useEffect(() => {

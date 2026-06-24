@@ -1,54 +1,79 @@
 import { io, Socket } from "socket.io-client"
-import { useEditorStore } from "@/store/editorStore"
-
-interface ServerClip {
-  id: string
-  mediaAssetId: string
-  startTimeMs: number
-  durationMs: number
-  trackIndex: number
-  opacity?: number
-}
+import { useEditorStore, type LocalClip } from "@/store/editorStore"
+import { clipFromServer, type ServerClip } from "@/lib/api"
 
 class RealtimeService {
   private socket: Socket | null = null
   private currentProjectId: string | null = null
   private currentToken: string | null = null
-  private started = false
+  private referenceCount = 0
+  private disconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
-   * Start the realtime service. Safe to call when the backend is offline —
-   * it will try to connect and silently log errors instead of throwing.
+   * Mark the service as "needed". Returns a function that releases
+   * the reference. When the reference count drops to zero the socket
+   * is torn down (after a short delay so quick navigations don't flap).
    */
-  start(token?: string) {
-    this.started = true
-    if (token) this.currentToken = token
-    const t = this.currentToken ?? (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null)
-    if (t) this.connect(t)
+  acquire(): () => void {
+    this.referenceCount += 1
+    const token = this.currentToken ?? this.readStoredToken()
+    if (token) this.connect(token)
+    return () => this.release()
   }
 
   /**
-   * Stop the realtime service and tear down the socket.
+   * Force a teardown — call on logout.
    */
-  stop() {
-    this.started = false
+  shutdown() {
+    this.referenceCount = 0
     this.disconnect()
   }
 
-  connect(token: string) {
-    if (this.socket?.connected) return
+  private release() {
+    this.referenceCount = Math.max(0, this.referenceCount - 1)
+    if (this.referenceCount > 0) return
+    if (this.disconnectTimer) clearTimeout(this.disconnectTimer)
+    this.disconnectTimer = setTimeout(() => {
+      this.disconnectTimer = null
+      if (this.referenceCount === 0) this.disconnect()
+    }, 1000)
+  }
+
+  private readStoredToken(): string | null {
+    if (typeof window === "undefined") return null
+    return localStorage.getItem("accessToken")
+  }
+
+  /**
+   * Connect to the realtime WebSocket server. Idempotent — calling this
+   * multiple times will only ever create one underlying socket.
+   */
+  connect(token: string): void {
+    if (this.socket?.connected) {
+      this.currentToken = token
+      return
+    }
+    if (this.socket) {
+      // Reuse the in-flight socket if it exists but isn't connected yet,
+      // but update the token so the latest one is used.
+      this.currentToken = token
+      return
+    }
     this.currentToken = token
 
-    const url = import.meta.env.VITE_API_URL || "http://localhost:3000"
+    const url =
+      (import.meta.env.VITE_API_URL as string | undefined) ||
+      "http://localhost:3000"
 
     try {
       this.socket = io(url, {
         auth: { token },
         transports: ["websocket", "polling"],
         reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 2000,
-        timeout: 5000,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
+        timeout: 8000,
       })
     } catch (err) {
       // Backend URL unreachable / invalid — fail silently in the UI
@@ -60,7 +85,7 @@ class RealtimeService {
     this.socket.on("connect", () => {
       console.log("WebSocket connected")
       if (this.currentProjectId) {
-        this.joinProject(this.currentProjectId)
+        this.emitJoin(this.currentProjectId)
       }
     })
 
@@ -69,8 +94,8 @@ class RealtimeService {
       console.warn("Realtime connection error:", err.message)
     })
 
-    this.socket.on("disconnect", () => {
-      console.log("WebSocket disconnected")
+    this.socket.on("disconnect", (reason) => {
+      console.log("WebSocket disconnected:", reason)
     })
 
     this.socket.on("project:updated", (project) => {
@@ -80,30 +105,40 @@ class RealtimeService {
       }
     })
 
-    this.socket.on("clip:created", (clip) => {
+    this.socket.on("clip:created", (serverClip: ServerClip) => {
       const store = useEditorStore.getState()
-      const localClip = this.mapServerClipToLocal(clip)
-      store.addClipLocal(localClip)
+      const local = this.toLocalClip(serverClip, store.mediaAssets)
+      if (!local) return
+      if (store.clips.some((c) => c.serverId === local.serverId)) return
+      store.addClipLocal(local)
     })
 
-    this.socket.on("clip:updated", (clip) => {
+    this.socket.on("clip:updated", (serverClip: ServerClip) => {
       const store = useEditorStore.getState()
-      const localClip = store.clips.find((c) => c.serverId === clip.id)
-      if (localClip) {
-        store.updateClipLocal(localClip.id, this.mapServerClipToLocal(clip))
+      const local = this.toLocalClip(serverClip, store.mediaAssets)
+      if (!local) return
+      const existing = store.clips.find((c) => c.serverId === serverClip.id)
+      if (existing) {
+        store.updateClipLocal(existing.id, { ...local, id: existing.id })
+      } else {
+        store.addClipLocal(local)
       }
     })
 
-    this.socket.on("clip:deleted", (data) => {
+    this.socket.on("clip:deleted", (data: { id: string }) => {
       const store = useEditorStore.getState()
-      const localClip = store.clips.find((c) => c.serverId === data.id)
-      if (localClip) {
-        store.deleteClipLocal(localClip.id)
+      const existing = store.clips.find((c) => c.serverId === data.id)
+      if (existing) {
+        store.deleteClipLocal(existing.id)
       }
     })
   }
 
   disconnect() {
+    if (this.disconnectTimer) {
+      clearTimeout(this.disconnectTimer)
+      this.disconnectTimer = null
+    }
     if (this.socket) {
       this.socket.removeAllListeners()
       this.socket.disconnect()
@@ -112,37 +147,61 @@ class RealtimeService {
     }
   }
 
-  isStarted() {
-    return this.started
-  }
-
+  /**
+   * Join a project room to start receiving clip/project events.
+   */
   joinProject(projectId: string) {
-    if (!this.socket?.connected) return
     this.currentProjectId = projectId
-    this.socket.emit("join-project", projectId)
+    if (this.socket?.connected) {
+      this.emitJoin(projectId)
+    }
   }
 
   leaveProject(projectId: string) {
-    if (!this.socket?.connected) return
-    this.socket.emit("leave-project", projectId)
+    if (this.socket?.connected) {
+      this.socket.emit("leave-project", projectId)
+    }
     if (this.currentProjectId === projectId) {
       this.currentProjectId = null
     }
   }
 
-  private mapServerClipToLocal(serverClip: ServerClip) {
+  private emitJoin(projectId: string) {
+    this.socket?.emit("join-project", projectId)
+  }
+
+  /**
+   * Convert a server clip (ms) into a LocalClip (seconds) and resolve
+   * the mediaId against the project's known media assets.
+   */
+  private toLocalClip(
+    serverClip: ServerClip,
+    mediaAssets: ReturnType<typeof useEditorStore.getState>["mediaAssets"],
+  ): LocalClip | null {
+    const base = clipFromServer(serverClip)
+    if (!base.mediaId) return null
+    const media = mediaAssets.find((m) => m.serverId === base.mediaId)
     return {
-      id: `srv_${serverClip.id}`,
-      serverId: serverClip.id,
-      mediaId: serverClip.mediaAssetId,
-      type: "video" as const,
-      url: undefined,
-      startTime: serverClip.startTimeMs / 1000,
-      duration: serverClip.durationMs / 1000,
-      track: serverClip.trackIndex,
-      trimStart: 0,
-      trimEnd: serverClip.durationMs / 1000,
-      volume: serverClip.opacity ?? 1,
+      id: `srv_${base.id}`,
+      serverId: base.id,
+      mediaId: base.mediaId,
+      type: media
+        ? media.type === "audio"
+          ? "audio"
+          : media.type === "image"
+            ? "image"
+            : "video"
+        : "video",
+      url: media?.url,
+      startTime: base.startTime,
+      duration: base.duration,
+      track: base.track,
+      trimStart: base.trimStart,
+      trimEnd: base.trimEnd,
+      volume: 1,
+      opacity: base.opacity,
+      syncing: false,
+      dirty: false,
     }
   }
 }

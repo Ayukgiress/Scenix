@@ -39,44 +39,87 @@ export function EditorPage() {
 
   useEditorShortcuts()
 
+  // Hold a reference to the realtime socket for the lifetime of the
+  // editor and leave the project when this page is unmounted.
+  useEffect(() => {
+    const release = realtimeService.acquire()
+    return () => {
+      if (projectId) realtimeService.leaveProject(projectId)
+      release()
+    }
+  }, [projectId])
+
+  // (Re)join the project room whenever the project changes.
+  useEffect(() => {
+    if (projectId) realtimeService.joinProject(projectId)
+  }, [projectId])
+
+  // Reset editor when leaving — only on unmount, not on projectId changes
+  // (changing projectId would otherwise wipe the project we just loaded).
+  useEffect(() => {
+    return () => {
+      const currentId = useEditorStore.getState().projectId
+      if (currentId) {
+        realtimeService.leaveProject(currentId)
+      }
+      resetEditor()
+    }
+  }, [resetEditor])
+
+  // Resolve the access token directly from localStorage so the load
+  // fires immediately on mount. If the auth context hasn't
+  // initialised yet but we have a stored token, that's good enough
+  // for the API call — `loadProject` will surface a 401/403 error
+  // and the UI will route to the "Couldn't open project" screen
+  // with the real message.
+  const token = accessToken ??
+    (typeof window !== "undefined"
+      ? localStorage.getItem("accessToken")
+      : null)
+  const authReady = !!token
+
   // Load project from URL or create one if none provided
   useEffect(() => {
+    if (!authReady || !token) return
+    const tokenAtStart = token
+    const projectIdAtStart = projectIdFromUrl
     let cancelled = false
 
     const run = async () => {
-      if (authLoading) {
-        setLoadState("init")
-        return
-      }
-      if (!accessToken) {
-        setLoadState("no-auth")
-        return
-      }
-      if (projectIdFromUrl) {
-        setLoadState("loading")
-        await loadProject(projectIdFromUrl, accessToken)
+      setLoadState("loading")
+      setErrorMsg(null)
+
+      if (projectIdAtStart) {
+        try {
+          await loadProject(projectIdAtStart, tokenAtStart)
+        } catch (e) {
+          console.error("loadProject threw", e)
+        }
         if (cancelled) return
+
         const state = useEditorStore.getState()
         if (state.projectError) {
           setLoadState("error")
           setErrorMsg(state.projectError)
-        } else if (!state.project) {
+        } else if (!state.project || !state.project.id) {
           setLoadState("missing")
         } else {
           setLoadState("ready")
         }
       } else {
         // No project in URL — auto-create one so user lands in the editor
-        setLoadState("loading")
         try {
-          const created = await createProject("Untitled project", accessToken)
+          const created = await createProject("Untitled project", tokenAtStart)
           if (cancelled) return
+          // Don't set ready yet — wait until the URL actually changes
+          // and the next effect run loads the freshly created project.
           navigate(`/editor?project=${created.id}`, { replace: true })
-          setLoadState("ready")
         } catch (e) {
           if (cancelled) return
           setLoadState("error")
-          setErrorMsg(e instanceof Error ? e.message : "Failed to create project")
+          setErrorMsg(
+            e instanceof Error ? e.message : "Failed to create project",
+          )
         }
       }
     }
@@ -86,35 +129,18 @@ export function EditorPage() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, accessToken, projectIdFromUrl])
-
-  // Reset editor when leaving
-  useEffect(() => {
-    return () => {
-      if (projectId) {
-        realtimeService.leaveProject(projectId)
-      }
-      resetEditor()
-    }
-  }, [resetEditor, projectId])
-
-  // Connect to WebSocket and join project room
-  useEffect(() => {
-    if (!accessToken) return
-    realtimeService.connect(accessToken)
-    
-    if (projectId) {
-      realtimeService.joinProject(projectId)
-    }
-
-    return () => {
-      if (projectId) {
-        realtimeService.leaveProject(projectId)
-      }
-    }
-  }, [accessToken, projectId])
+  }, [projectIdFromUrl, authReady, token])
 
   // ─── Render guards ───────────────────────────────────────────────────────
+  if (loadState === "init") {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-foreground">
+        <Spinner />
+        <p className="text-[12px] text-muted-foreground">Initializing…</p>
+      </div>
+    )
+  }
+
   if (loadState === "no-auth" || (authLoading && !accessToken)) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background text-foreground">
@@ -159,10 +185,19 @@ export function EditorPage() {
         <p className="max-w-sm text-center text-[12px] text-red-400">
           {errorMsg ?? projectError ?? "Unknown error"}
         </p>
+        <p className="max-w-md text-center text-[10px] text-muted-foreground/60">
+          ID: {projectIdFromUrl ?? "(none)"}
+        </p>
         <div className="flex gap-2">
           <Link
-            to="/projects"
+            to="/dashboard"
             className="rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:opacity-90"
+          >
+            Back to dashboard
+          </Link>
+          <Link
+            to="/projects"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-[12px] font-medium hover:bg-muted"
           >
             Back to projects
           </Link>
@@ -178,12 +213,17 @@ export function EditorPage() {
         <p className="max-w-sm text-center text-[12px] text-muted-foreground">
           The project you’re looking for doesn’t exist or has been deleted.
         </p>
-        <Link
-          to="/projects"
-          className="rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:opacity-90"
-        >
-          Back to projects
-        </Link>
+        <p className="max-w-md text-center text-[10px] text-muted-foreground/60">
+          ID: {projectIdFromUrl ?? "(none)"}
+        </p>
+        <div className="flex gap-2">
+          <Link
+            to="/dashboard"
+            className="rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:opacity-90"
+          >
+            Back to dashboard
+          </Link>
+        </div>
       </div>
     )
   }

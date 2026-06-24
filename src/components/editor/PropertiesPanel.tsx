@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react"
-import { useEditorStore, type LocalClip } from "@/store/editorStore"
-import { useAuth } from "@/hooks/useAuth"
+import { useEffect, useRef, useState } from "react";
+import { useEditorStore, type LocalClip } from "@/store/editorStore";
+import { useAuth } from "@/hooks/useAuth";
 
 function formatTimeDetailed(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-  const secs = (seconds % 60).toFixed(2)
-  return `${mins}:${secs.padStart(5, "0")}`
+  const mins = Math.floor(seconds / 60);
+  const secs = (seconds % 60).toFixed(2);
+  return `${mins}:${secs.padStart(5, "0")}`;
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -13,7 +13,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
       {children}
     </label>
-  )
+  );
 }
 
 function NumberField({
@@ -22,12 +22,12 @@ function NumberField({
   step = 0.1,
   min = 0,
 }: {
-  value: number
-  onChange: (v: number) => void
-  step?: number
-  min?: number
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+  min?: number;
 }) {
-  const [local, setLocal] = useState(value.toFixed(2))
+  const [local, setLocal] = useState(value.toFixed(2));
   return (
     <input
       key={value.toFixed(2)}
@@ -35,15 +35,15 @@ function NumberField({
       step={step}
       value={local}
       onChange={(e) => {
-        const v = e.target.value
-        setLocal(v)
-        const parsed = parseFloat(v)
-        if (!Number.isNaN(parsed)) onChange(Math.max(min, parsed))
+        const v = e.target.value;
+        setLocal(v);
+        const parsed = parseFloat(v);
+        if (!Number.isNaN(parsed)) onChange(Math.max(min, parsed));
       }}
       onBlur={() => setLocal(value.toFixed(2))}
       className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
     />
-  )
+  );
 }
 
 function EmptyState() {
@@ -55,65 +55,67 @@ function EmptyState() {
         </span>
       </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-[12px] font-medium text-foreground">No clip selected</p>
+        <p className="text-[12px] font-medium text-foreground">
+          No clip selected
+        </p>
         <p className="text-[10px] text-muted-foreground">
           Click a clip on the timeline to edit
         </p>
       </div>
     </aside>
-  )
+  );
 }
 
 interface PropertiesPanelProps {
-  selectedClip: LocalClip
+  selectedClip: LocalClip;
 }
 
 function PropertiesContent({ selectedClip }: PropertiesPanelProps) {
-  const updateClipLocal = useEditorStore((s) => s.updateClipLocal)
-  const syncUpdateClip = useEditorStore((s) => s.syncUpdateClip)
-  const syncDeleteClip = useEditorStore((s) => s.syncDeleteClip)
-  const selectClip = useEditorStore((s) => s.selectClip)
-  const seek = useEditorStore((s) => s.seek)
-  const { accessToken } = useAuth()
+  const updateClipLocal = useEditorStore((s) => s.updateClipLocal);
+  const syncUpdateClip = useEditorStore((s) => s.syncUpdateClip);
+  const syncDeleteClip = useEditorStore((s) => s.syncDeleteClip);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const seek = useEditorStore((s) => s.seek);
+  const { accessToken } = useAuth();
 
   // Debounce server sync so dragging a range input doesn't spam the API
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingRef = useRef<Partial<LocalClip>>({})
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<Partial<LocalClip>>({});
 
   const queueSync = (updates: Partial<LocalClip>) => {
-    Object.assign(pendingRef.current, updates)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+    Object.assign(pendingRef.current, updates);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       if (accessToken && Object.keys(pendingRef.current).length > 0) {
-        const payload = { ...pendingRef.current }
-        pendingRef.current = {}
-        syncUpdateClip(selectedClip.id, payload, accessToken)
+        const payload = { ...pendingRef.current };
+        pendingRef.current = {};
+        syncUpdateClip(selectedClip.id, payload, accessToken);
       }
-    }, 350)
-  }
+    }, 350);
+  };
 
   useEffect(() => {
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [])
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const handleChange = (updates: Partial<LocalClip>) => {
-    updateClipLocal(selectedClip.id, updates)
-    queueSync(updates)
-  }
+    updateClipLocal(selectedClip.id, updates);
+    queueSync(updates);
+  };
 
   const handleDelete = async () => {
     if (accessToken) {
-      await syncDeleteClip(selectedClip.id, accessToken)
-      selectClip(null)
+      await syncDeleteClip(selectedClip.id, accessToken);
+      selectClip(null);
     }
-  }
+  };
 
   const trimMax = Math.max(
     (selectedClip.trimEnd ?? selectedClip.duration) + 50,
     100,
-  )
+  );
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-l border-border/60 bg-card/40">
@@ -254,7 +256,15 @@ function PropertiesContent({ selectedClip }: PropertiesPanelProps) {
             onClick={handleDelete}
             className="flex w-full items-center justify-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/20"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-3"
+            >
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
@@ -263,14 +273,14 @@ function PropertiesContent({ selectedClip }: PropertiesPanelProps) {
         </div>
       </div>
     </aside>
-  )
+  );
 }
 
 export function PropertiesPanel() {
-  const selectedClipId = useEditorStore((s) => s.selectedClipId)
-  const clips = useEditorStore((s) => s.clips)
-  const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null
+  const selectedClipId = useEditorStore((s) => s.selectedClipId);
+  const clips = useEditorStore((s) => s.clips);
+  const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null;
 
-  if (!selectedClip) return <EmptyState />
-  return <PropertiesContent selectedClip={selectedClip} />
+  if (!selectedClip) return <EmptyState />;
+  return <PropertiesContent selectedClip={selectedClip} />;
 }

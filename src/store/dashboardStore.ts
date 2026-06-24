@@ -1,7 +1,8 @@
 import { create } from "zustand"
-import type { Project, Activity, Stats } from "@/types/dashboard"
+import type { Project, Activity, Stats, ProjectStatus } from "@/types/dashboard"
 import type { Media, Export } from "@/lib/api"
 import { api } from "@/lib/api"
+import type { Project as ApiProject } from "@/lib/api"
 
 interface DashboardState {
   projects: Project[]
@@ -11,16 +12,17 @@ interface DashboardState {
   exports: Export[]
   loading: boolean
   error: string | null
-  
+
   // Actions
   fetchProjects: (token: string) => Promise<void>
   fetchMedia: (token: string) => Promise<void>
   fetchExports: (token: string) => Promise<void>
   createProject: (token: string, title: string) => Promise<void>
+  createProjectAndReturn: (token: string, title: string) => Promise<ApiProject | null>
   deleteProject: (token: string, id: string) => Promise<void>
   addActivity: (activity: Omit<Activity, "id" | "timestamp">) => void
   updateProjectProgress: (id: string, progress: number) => void
-  updateProjectStatus: (id: string, status: Project["status"]) => void
+  updateProjectStatus: (id: string, status: ProjectStatus) => void
   incrementStat: (key: keyof Omit<Stats, "storageUsed" | "storageTotal">) => void
   setError: (error: string | null) => void
 }
@@ -31,10 +33,10 @@ function timeAgo(date: string): string {
   const diffMs = now.getTime() - past.getTime()
   const diffHrs = Math.floor(diffMs / (1000 * 60 * 60))
   const diffDays = Math.floor(diffHrs / 24)
-  
-  if (diffHrs < 1) return 'Just now'
+
+  if (diffHrs < 1) return "Just now"
   if (diffHrs < 24) return `${diffHrs}h ago`
-  if (diffDays === 1) return 'Yesterday'
+  if (diffDays === 1) return "Yesterday"
   return `${diffDays} days ago`
 }
 
@@ -57,27 +59,30 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     try {
       set({ loading: true, error: null })
       const backendProjects = await api.getProjects(token)
-      
+
       const projects: Project[] = backendProjects.map((p, i) => ({
         id: p.id,
         title: p.title,
-        duration: "0:00", // Will be calculated from clips/media
-        size: "0 MB", // Will be calculated from media
-        status: p.status as Project["status"],
+        duration: "0:00",
+        size: "0 MB",
+        status: (p.status as ProjectStatus) ?? "DRAFT",
         hue: 60 + (i * 70) % 300,
         updatedAt: timeAgo(p.updatedAt),
-        thumb: [60 + (i * 70) % 300, 40 + (i * 50) % 280]
+        thumb: [60 + (i * 70) % 300, 40 + (i * 50) % 280],
       }))
-      
-      set({ 
+
+      set({
         projects,
-        stats: { 
-          ...get().stats, 
-          totalProjects: projects.length 
-        }
+        stats: {
+          ...get().stats,
+          totalProjects: projects.length,
+        },
       })
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch projects' })
+      set({
+        error:
+          error instanceof Error ? error.message : "Failed to fetch projects",
+      })
     } finally {
       set({ loading: false })
     }
@@ -85,37 +90,36 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
   fetchMedia: async (token: string) => {
     try {
-      const mediaResponse = await api.getMedia(token)
-      const media = Array.isArray(mediaResponse) ? mediaResponse : []
+      const media = await api.getMedia(token)
       const totalSize = media.reduce((sum, m) => sum + (m.size || 0), 0)
-      
-      set({ 
+
+      set({
         media,
         stats: {
           ...get().stats,
-          storageUsed: Math.round(totalSize / (1024 * 1024 * 1024) * 100) / 100
-        }
+          storageUsed:
+            Math.round((totalSize / (1024 * 1024 * 1024)) * 100) / 100,
+        },
       })
     } catch (error) {
-      console.error('Failed to fetch media:', error)
-      set({ media: [] }) // Set empty array on error
+      console.error("Failed to fetch media:", error)
+      set({ media: [] })
     }
   },
 
   fetchExports: async (token: string) => {
     try {
-      const exportsResponse = await api.getExports(token)
-      const exports = Array.isArray(exportsResponse) ? exportsResponse : []
-      set({ 
-        exports,
+      const exportsResp = await api.getExports(token)
+      set({
+        exports: exportsResp,
         stats: {
           ...get().stats,
-          exports: exports.length
-        }
+          exports: exportsResp.length,
+        },
       })
     } catch (error) {
-      console.error('Failed to fetch exports:', error)
-      set({ exports: [] }) // Set empty array on error
+      console.error("Failed to fetch exports:", error)
+      set({ exports: [] })
     }
   },
 
@@ -125,7 +129,27 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       await api.createProject(token, { title })
       await get().fetchProjects(token)
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create project' })
+      set({
+        error:
+          error instanceof Error ? error.message : "Failed to create project",
+      })
+    } finally {
+      set({ loading: false })
+    }
+  },
+
+  createProjectAndReturn: async (token: string, title: string) => {
+    try {
+      set({ loading: true, error: null })
+      const created: ApiProject = await api.createProject(token, { title })
+      await get().fetchProjects(token)
+      return created
+    } catch (error) {
+      set({
+        error:
+          error instanceof Error ? error.message : "Failed to create project",
+      })
+      return null
     } finally {
       set({ loading: false })
     }
@@ -137,7 +161,10 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       await api.deleteProject(token, id)
       await get().fetchProjects(token)
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete project' })
+      set({
+        error:
+          error instanceof Error ? error.message : "Failed to delete project",
+      })
     } finally {
       set({ loading: false })
     }
@@ -153,12 +180,16 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
   updateProjectProgress: (id, progress) =>
     set((state) => ({
-      projects: state.projects.map((p) => (p.id === id ? { ...p, progress } : p)),
+      projects: state.projects.map((p) =>
+        p.id === id ? { ...p, progress } : p,
+      ),
     })),
 
   updateProjectStatus: (id, status) =>
     set((state) => ({
-      projects: state.projects.map((p) => (p.id === id ? { ...p, status, progress: undefined } : p)),
+      projects: state.projects.map((p) =>
+        p.id === id ? { ...p, status, progress: undefined } : p,
+      ),
     })),
 
   incrementStat: (key) =>
@@ -166,5 +197,5 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       stats: { ...state.stats, [key]: state.stats[key] + 1 },
     })),
 
-  setError: (error) => set({ error })
+  setError: (error) => set({ error }),
 }))
