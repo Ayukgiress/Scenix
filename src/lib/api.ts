@@ -109,12 +109,10 @@ export interface ServerClip {
 }
 
 export interface CloudinarySignature {
+  uploadUrl: string;
+  fields: Record<string, string>;
   cloudName: string;
-  apiKey: string;
-  timestamp: number;
-  signature: string;
-  folder: string;
-  uploadPreset?: string;
+  resourceType: string;
 }
 
 // ─── Media translation helpers ──────────────────────────────────────────────
@@ -198,7 +196,7 @@ export function clipToServer(input: {
   durationMs: number;
 } {
   return {
-    mediaAssetId: input.mediaId ?? null,
+    mediaAssetId: input.mediaId ? input.mediaId : null,
     trackIndex: input.track,
     startTimeMs: Math.max(0, Math.round(input.startTime * 1000)),
     durationMs: Math.max(1, Math.round(input.duration * 1000)),
@@ -586,6 +584,7 @@ export const api = {
       duration: number;
       trimStart?: number;
       trimEnd?: number;
+      metadata?: Record<string, unknown>;
     },
   ): Promise<ServerClip> {
     const payload = clipToServer(data);
@@ -611,21 +610,23 @@ export const api = {
     projectId: string,
     clipId: string,
     data: {
-      mediaId?: string;
+      mediaId?: string | null;
       track?: number;
       startTime?: number;
       duration?: number;
       trimStart?: number;
       trimEnd?: number;
+      metadata?: Record<string, unknown>;
     },
   ): Promise<ServerClip> {
     const payload: Record<string, unknown> = {};
-    if (data.mediaId !== undefined) payload.mediaAssetId = data.mediaId;
+    if (data.mediaId) payload.mediaAssetId = data.mediaId;
     if (data.track !== undefined) payload.trackIndex = data.track;
     if (data.startTime !== undefined)
       payload.startTimeMs = Math.max(0, Math.round(data.startTime * 1000));
     if (data.duration !== undefined)
       payload.durationMs = Math.max(1, Math.round(data.duration * 1000));
+    if (data.metadata !== undefined) payload.metadata = data.metadata;
     const res = await fetch(
       `${API_URL}/projects/${projectId}/clips/${clipId}`,
       {
@@ -690,23 +691,12 @@ export async function uploadToCloudinary(
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("api_key", signature.apiKey);
-    formData.append("timestamp", String(signature.timestamp));
-    formData.append("signature", signature.signature);
-    formData.append("folder", signature.folder);
-    if (signature.uploadPreset)
-      formData.append("upload_preset", signature.uploadPreset);
+    for (const [key, value] of Object.entries(signature.fields)) {
+      formData.append(key, value);
+    }
 
     const xhr = new XMLHttpRequest();
-    const resourceType = file.type.startsWith("video")
-      ? "video"
-      : file.type.startsWith("audio")
-        ? "audio"
-        : "image";
-    xhr.open(
-      "POST",
-      `https://api.cloudinary.com/v1_1/${signature.cloudName}/${resourceType}/upload`,
-    );
+    xhr.open("POST", signature.uploadUrl);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
         onProgress(Math.round((e.loaded / e.total) * 100));

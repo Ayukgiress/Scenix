@@ -12,6 +12,8 @@ import { SignupPage } from "@/pages/SignupPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { VerifyEmailPage } from "@/pages/VerifyEmailPage"
 import { VerifyPendingPage } from "@/pages/VerifyPendingPage"
+// import { SettingsPage } from "@/pages/SettingsPage"
+import SettingsPage from "./pages/SettingsPage"
 
 function App() {
   return (
@@ -31,6 +33,7 @@ function App() {
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/auth/verify-email" element={<VerifyEmailPage />} />
           <Route path="/auth/verify-pending" element={<VerifyPendingPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
         </Routes>
       </BrowserRouter>

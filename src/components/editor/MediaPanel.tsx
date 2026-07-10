@@ -251,9 +251,9 @@ export function MediaPanel() {
     .filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
-    <aside
+    <div
       ref={dropRef}
-      className={`relative flex h-full w-64 shrink-0 flex-col border-r border-border/60 bg-card/40 transition-colors ${
+      className={`relative flex h-full flex-col transition-colors ${
         dragOver ? "ring-2 ring-primary ring-inset" : ""
       }`}
     >
@@ -403,6 +403,6 @@ export function MediaPanel() {
           </div>
         )}
       </div>
-    </aside>
+    </div>
   )
 }

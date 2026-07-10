@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { useEditorStore } from "@/store/editorStore"
+import { useEditorStore, type ConnectionStatus } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
 
 function Icon({ name, className = "size-4" }: { name: string; className?: string }) {
@@ -81,6 +81,7 @@ export function EditorTopbar() {
   const loadingProject = useEditorStore((s) => s.loadingProject)
   const save = useEditorStore((s) => s.save)
   const projectId = useEditorStore((s) => s.projectId)
+  const connectionStatus = useEditorStore((s) => s.connectionStatus)
 
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(projectTitle)
@@ -226,6 +227,30 @@ export function EditorTopbar() {
                 projectTitle || "Untitled project"
               )}
             </button>
+          )}
+        </div>
+
+        {/* Connection status */}
+        <div className="ml-2 hidden items-center gap-1.5 text-[10px] md:flex">
+          {connectionStatus === "connected" && (
+            <span className="flex items-center gap-1 text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-400" />Live
+            </span>
+          )}
+          {connectionStatus === "connecting" && (
+            <span className="flex items-center gap-1 text-yellow-400">
+              <span className="size-1.5 animate-pulse rounded-full bg-yellow-400" />Connecting
+            </span>
+          )}
+          {connectionStatus === "error" && (
+            <span className="flex items-center gap-1 text-red-400">
+              <span className="size-1.5 rounded-full bg-red-400" />Offline
+            </span>
+          )}
+          {connectionStatus === "disconnected" && (
+            <span className="flex items-center gap-1 text-muted-foreground/50">
+              <span className="size-1.5 rounded-full bg-muted-foreground/50" />Disconnected
+            </span>
           )}
         </div>
 

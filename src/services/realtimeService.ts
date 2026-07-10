@@ -1,6 +1,18 @@
 import { io, Socket } from "socket.io-client"
-import { useEditorStore, type LocalClip } from "@/store/editorStore"
-import { clipFromServer, type ServerClip } from "@/lib/api"
+import { useEditorStore, type LocalClip, type LocalMedia } from "@/store/editorStore"
+import { clipFromServer, type ServerClip, type Media } from "@/lib/api"
+
+// ─── Presence ────────────────────────────────────────────────────────────────
+export interface RemoteCursor {
+  userId: string
+  name: string
+  color: string
+  currentTime: number
+  selectedClipId: string | null
+  lastSeen: number
+}
+
+type CursorListener = (cursors: Map<string, RemoteCursor>) => void
 
 class RealtimeService {
   private socket: Socket | null = null
@@ -9,11 +21,13 @@ class RealtimeService {
   private referenceCount = 0
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-  /**
-   * Mark the service as "needed". Returns a function that releases
-   * the reference. When the reference count drops to zero the socket
-   * is torn down (after a short delay so quick navigations don't flap).
-   */
+  // Presence
+  private remoteCursors = new Map<string, RemoteCursor>()
+  private cursorListeners = new Set<CursorListener>()
+  private cursorBroadcastTimer: ReturnType<typeof setTimeout> | null = null
+
+  // ─── Lifecycle ─────────────────────────────────────────────────────────
+
   acquire(): () => void {
     this.referenceCount += 1
     const token = this.currentToken ?? this.readStoredToken()
@@ -21,9 +35,6 @@ class RealtimeService {
     return () => this.release()
   }
 
-  /**
-   * Force a teardown — call on logout.
-   */
   shutdown() {
     this.referenceCount = 0
     this.disconnect()
@@ -44,26 +55,14 @@ class RealtimeService {
     return localStorage.getItem("accessToken")
   }
 
-  /**
-   * Connect to the realtime WebSocket server. Idempotent — calling this
-   * multiple times will only ever create one underlying socket.
-   */
+  // ─── Connection ────────────────────────────────────────────────────────
+
   connect(token: string): void {
-    if (this.socket?.connected) {
-      this.currentToken = token
-      return
-    }
-    if (this.socket) {
-      // Reuse the in-flight socket if it exists but isn't connected yet,
-      // but update the token so the latest one is used.
-      this.currentToken = token
-      return
-    }
+    if (this.socket?.connected) { this.currentToken = token; return }
+    if (this.socket) { this.currentToken = token; return }
     this.currentToken = token
 
-    const url =
-      (import.meta.env.VITE_API_URL as string | undefined) ||
-      "http://localhost:3000"
+    const url = (import.meta.env.VITE_API_URL as string | undefined) || "http://localhost:3000"
 
     try {
       this.socket = io(url, {
@@ -76,39 +75,57 @@ class RealtimeService {
         timeout: 8000,
       })
     } catch (err) {
-      // Backend URL unreachable / invalid — fail silently in the UI
       console.warn("Realtime service could not initialize:", err)
       this.socket = null
+      useEditorStore.getState().setConnectionStatus("error")
       return
     }
 
+    useEditorStore.getState().setConnectionStatus("connecting")
+
     this.socket.on("connect", () => {
-      console.log("WebSocket connected")
-      if (this.currentProjectId) {
-        this.emitJoin(this.currentProjectId)
-      }
+      useEditorStore.getState().setConnectionStatus("connected")
+      if (this.currentProjectId) this.emitJoin(this.currentProjectId)
     })
 
     this.socket.on("connect_error", (err) => {
-      // Backend offline / unreachable — log and let socket.io keep retrying
       console.warn("Realtime connection error:", err.message)
+      useEditorStore.getState().setConnectionStatus("error")
     })
 
     this.socket.on("disconnect", (reason) => {
       console.log("WebSocket disconnected:", reason)
+      useEditorStore.getState().setConnectionStatus(
+        reason === "io client disconnect" ? "disconnected" : "connecting"
+      )
     })
 
-    this.socket.on("project:updated", (project) => {
+    this.socket.on("reconnect", () => {
+      useEditorStore.getState().setConnectionStatus("connected")
+      if (this.currentProjectId) this.emitJoin(this.currentProjectId)
+    })
+
+    // ─── Project events ─────────────────────────────────────────────────
+
+    this.socket.on("project:updated", (project: { id: string; title: string; status: string }) => {
       const store = useEditorStore.getState()
       if (store.projectId === project.id) {
-        store.setProject(project)
+        store.setProject(project as Parameters<typeof store.setProject>[0])
       }
     })
+
+    this.socket.on("project:renamed", (data: { id: string; title: string }) => {
+      const store = useEditorStore.getState()
+      if (store.projectId === data.id) store.setProjectTitle(data.title)
+    })
+
+    // ─── Clip events ─────────────────────────────────────────────────────
 
     this.socket.on("clip:created", (serverClip: ServerClip) => {
       const store = useEditorStore.getState()
       const local = this.toLocalClip(serverClip, store.mediaAssets)
       if (!local) return
+      // Ignore if we already have this clip (we created it ourselves)
       if (store.clips.some((c) => c.serverId === local.serverId)) return
       store.addClipLocal(local)
     })
@@ -119,6 +136,8 @@ class RealtimeService {
       if (!local) return
       const existing = store.clips.find((c) => c.serverId === serverClip.id)
       if (existing) {
+        // Don't overwrite a clip that is currently being dragged (syncing=true)
+        if (existing.syncing) return
         store.updateClipLocal(existing.id, { ...local, id: existing.id })
       } else {
         store.addClipLocal(local)
@@ -128,78 +147,157 @@ class RealtimeService {
     this.socket.on("clip:deleted", (data: { id: string }) => {
       const store = useEditorStore.getState()
       const existing = store.clips.find((c) => c.serverId === data.id)
-      if (existing) {
-        store.deleteClipLocal(existing.id)
-      }
+      if (existing) store.deleteClipLocal(existing.id)
     })
+
+    // ─── Media events ─────────────────────────────────────────────────────
+
+    this.socket.on("media:created", (serverMedia: Media) => {
+      const store = useEditorStore.getState()
+      // Only add if not already present (we may have added it optimistically)
+      if (store.mediaAssets.some((m) => m.serverId === serverMedia.id)) return
+      const local: LocalMedia = {
+        id: `srv_${serverMedia.id}`,
+        serverId: serverMedia.id,
+        name: serverMedia.filename,
+        type: (serverMedia.type as LocalMedia["type"]) || "video",
+        url: serverMedia.url,
+        duration: serverMedia.duration,
+      }
+      store.addMediaAssetLocal(local)
+    })
+
+    this.socket.on("media:deleted", (data: { id: string }) => {
+      const store = useEditorStore.getState()
+      const existing = store.mediaAssets.find((m) => m.serverId === data.id)
+      if (existing) store.removeMediaAssetLocal(existing.id)
+    })
+
+    // ─── Presence / cursor events ─────────────────────────────────────────
+
+    this.socket.on("cursor:update", (cursor: RemoteCursor) => {
+      this.remoteCursors.set(cursor.userId, { ...cursor, lastSeen: Date.now() })
+      this.notifyCursorListeners()
+    })
+
+    this.socket.on("cursor:leave", (data: { userId: string }) => {
+      this.remoteCursors.delete(data.userId)
+      this.notifyCursorListeners()
+    })
+
+    // Prune stale cursors every 5s
+    setInterval(() => {
+      const now = Date.now()
+      let changed = false
+      for (const [id, c] of this.remoteCursors) {
+        if (now - c.lastSeen > 10000) { this.remoteCursors.delete(id); changed = true }
+      }
+      if (changed) this.notifyCursorListeners()
+    }, 5000)
   }
 
   disconnect() {
-    if (this.disconnectTimer) {
-      clearTimeout(this.disconnectTimer)
-      this.disconnectTimer = null
-    }
+    if (this.disconnectTimer) { clearTimeout(this.disconnectTimer); this.disconnectTimer = null }
+    if (this.cursorBroadcastTimer) { clearTimeout(this.cursorBroadcastTimer); this.cursorBroadcastTimer = null }
     if (this.socket) {
       this.socket.removeAllListeners()
       this.socket.disconnect()
       this.socket = null
       this.currentProjectId = null
     }
+    this.remoteCursors.clear()
+    this.notifyCursorListeners()
   }
 
-  /**
-   * Join a project room to start receiving clip/project events.
-   */
+  // ─── Project room ──────────────────────────────────────────────────────
+
   joinProject(projectId: string) {
     this.currentProjectId = projectId
-    if (this.socket?.connected) {
-      this.emitJoin(projectId)
-    }
+    if (this.socket?.connected) this.emitJoin(projectId)
   }
 
   leaveProject(projectId: string) {
-    if (this.socket?.connected) {
-      this.socket.emit("leave-project", projectId)
-    }
-    if (this.currentProjectId === projectId) {
-      this.currentProjectId = null
-    }
+    if (this.socket?.connected) this.socket.emit("leave-project", projectId)
+    if (this.currentProjectId === projectId) this.currentProjectId = null
+    this.remoteCursors.clear()
+    this.notifyCursorListeners()
   }
 
   private emitJoin(projectId: string) {
     this.socket?.emit("join-project", projectId)
   }
 
-  /**
-   * Convert a server clip (ms) into a LocalClip (seconds) and resolve
-   * the mediaId against the project's known media assets.
-   */
+  // ─── Cursor presence ───────────────────────────────────────────────────
+
+  broadcastCursor(data: { currentTime: number; selectedClipId: string | null }) {
+    if (!this.socket?.connected || !this.currentProjectId) return
+    // Throttle to max 10 fps
+    if (this.cursorBroadcastTimer) return
+    this.cursorBroadcastTimer = setTimeout(() => {
+      this.cursorBroadcastTimer = null
+      this.socket?.emit("cursor:update", {
+        projectId: this.currentProjectId,
+        ...data,
+      })
+    }, 100)
+  }
+
+  subscribeCursors(listener: CursorListener): () => void {
+    this.cursorListeners.add(listener)
+    return () => this.cursorListeners.delete(listener)
+  }
+
+  getRemoteCursors(): Map<string, RemoteCursor> {
+    return this.remoteCursors
+  }
+
+  private notifyCursorListeners() {
+    const snapshot = new Map(this.remoteCursors)
+    for (const l of this.cursorListeners) l(snapshot)
+  }
+
+  // ─── Helpers ───────────────────────────────────────────────────────────
+
+  get isConnected() {
+    return this.socket?.connected ?? false
+  }
+
   private toLocalClip(
     serverClip: ServerClip,
     mediaAssets: ReturnType<typeof useEditorStore.getState>["mediaAssets"],
   ): LocalClip | null {
     const base = clipFromServer(serverClip)
-    if (!base.mediaId) return null
-    const media = mediaAssets.find((m) => m.serverId === base.mediaId)
+    const media = base.mediaId ? mediaAssets.find((m) => m.serverId === base.mediaId) : undefined
+    const metadata = (serverClip.metadata as Record<string, unknown> | null) ?? undefined
+
+    // Determine type: if no media but has text metadata → text clip
+    const type: LocalClip["type"] = media
+      ? media.type === "audio" ? "audio" : media.type === "image" ? "image" : "video"
+      : metadata?.text !== undefined ? "text" : "video"
+
+    // For text clips, reconstruct the url JSON payload from metadata
+    const url = media?.url ?? (type === "text" && metadata ? JSON.stringify(metadata) : undefined)
+
     return {
-      id: `srv_${base.id}`,
-      serverId: base.id,
-      mediaId: base.mediaId,
-      type: media
-        ? media.type === "audio"
-          ? "audio"
-          : media.type === "image"
-            ? "image"
-            : "video"
-        : "video",
-      url: media?.url,
+      id: `srv_${serverClip.id}`,
+      serverId: serverClip.id,
+      mediaId: base.mediaId ?? "",
+      type,
+      url,
       startTime: base.startTime,
       duration: base.duration,
       track: base.track,
       trimStart: base.trimStart,
       trimEnd: base.trimEnd,
-      volume: 1,
+      volume: (metadata?.volume as number) ?? 1,
       opacity: base.opacity,
+      rotation: base.rotation,
+      zIndex: base.zIndex,
+      x: base.x,
+      y: base.y,
+      width: base.width,
+      height: base.height,
+      metadata,
       syncing: false,
       dirty: false,
     }

@@ -7,12 +7,12 @@ import { realtimeService } from "@/services/realtimeService";
 import type { Project } from "@/types/dashboard";
 
 const NAV = [
-  { label: "Home", icon: "home", path: "/dashboard" },
+  { label: "overview", icon: "home", path: "/dashboard" },
   { label: "Projects", icon: "grid", path: "/dashboard" },
   { label: "Media", icon: "file", path: "/media" },
   { label: "Exports", icon: "export", path: "/exports" },
   { label: "Team", icon: "team", path: "/dashboard" },
-  { label: "Settings", icon: "settings", path: "/dashboard" },
+  { label: "Settings", icon: "settings", path: "/settings" },
 ];
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -459,7 +459,7 @@ export function DashboardPage() {
             </div>
           )}
 
-          <div className="mx-auto max-w-7xl space-y-8 p-6">
+          <div className="mx-auto w-full space-y-8 p-6">
             {/* Stats */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-border bg-card p-4">
