@@ -41,7 +41,7 @@ function readMediaDuration(file: File, kind: AssetType): Promise<number> {
 }
 
 function localId() {
-  return `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `tmp_${crypto.randomUUID()}`
 }
 
 function formatDuration(sec: number): string {
@@ -73,6 +73,7 @@ function AssetPreview({
         muted
         playsInline
         preload="metadata"
+        crossOrigin="anonymous"
       />
     )
   }
@@ -146,7 +147,6 @@ export function MediaPanel() {
       try {
         const localDuration = await readMediaDuration(file, kind)
         const signature = await api.createCloudinaryUpload(accessToken, {
-          folder: `scenix/projects/${projectId}`,
           filename: file.name,
           type: (kind === "audio"
             ? "AUDIO"

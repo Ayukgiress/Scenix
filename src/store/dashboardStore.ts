@@ -46,7 +46,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   stats: {
     totalProjects: 0,
     storageUsed: 0,
-    storageTotal: 50,
+    storageTotal: 0,
     exports: 0,
     aiGenerations: 0,
   },
@@ -68,7 +68,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         status: (p.status as ProjectStatus) ?? "DRAFT",
         hue: 60 + (i * 70) % 300,
         updatedAt: timeAgo(p.updatedAt),
-        thumb: [60 + (i * 70) % 300, 40 + (i * 50) % 280],
+        thumb: [60 + (i * 70) % 300, 40 + (i * 50) % 280, p.thumbnailUrl ?? undefined],
       }))
 
       set({
@@ -92,13 +92,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     try {
       const media = await api.getMedia(token)
       const totalSize = media.reduce((sum, m) => sum + (m.size || 0), 0)
+      const storageUsedGB = Math.round((totalSize / (1024 * 1024 * 1024)) * 100) / 100
 
       set({
         media,
         stats: {
           ...get().stats,
-          storageUsed:
-            Math.round((totalSize / (1024 * 1024 * 1024)) * 100) / 100,
+          storageUsed: storageUsedGB,
+          // Default plan quota: 50 GB — will be overridden when user plan API is available
+          storageTotal: Math.max(50, Math.ceil(storageUsedGB * 2)),
         },
       })
     } catch (error) {
@@ -110,8 +112,16 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   fetchExports: async (token: string) => {
     try {
       const exportsResp = await api.getExports(token)
+      const activities = exportsResp.slice(0, 10).map((e) => ({
+        id: e.id,
+        icon: "export",
+        text: `Export ${e.status.toLowerCase()} — ${e.format.toUpperCase()} ${e.quality}`,
+        time: new Date(e.createdAt).toLocaleString(),
+        timestamp: new Date(e.createdAt).getTime(),
+      }))
       set({
         exports: exportsResp,
+        activities,
         stats: {
           ...get().stats,
           exports: exportsResp.length,

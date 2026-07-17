@@ -1,6 +1,9 @@
-import { useState } from "react"
-import { Link } from "react-router-dom"
+import { useState, useEffect, useRef } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { api } from "@/lib/api"
+import { useAuth } from "@/hooks/useAuth"
+import { Download, X, Loader2 } from "lucide-react"
 
 type Format = "MP4" | "MOV" | "WebM" | "GIF"
 type Resolution = "1080p" | "1440p" | "4K" | "8K"
@@ -9,20 +12,100 @@ type Fps = "24" | "30" | "60"
 const resolutions: { id: Resolution; label: string; sub: string }[] = [
   { id: "1080p", label: "1080p", sub: "Full HD" },
   { id: "1440p", label: "1440p", sub: "QHD" },
-  { id: "4K", label: "4K", sub: "Ultra HD" },
-  { id: "8K", label: "8K", sub: "ProRes" },
+  { id: "4K",    label: "4K",    sub: "Ultra HD" },
+  { id: "8K",    label: "8K",    sub: "ProRes" },
 ]
-
 const formats: Format[] = ["MP4", "MOV", "WebM", "GIF"]
 const frameRates: Fps[] = ["24", "30", "60"]
 
+type ExportPhase = "idle" | "submitting" | "polling" | "done" | "error"
+
 export function ExportDialog() {
-  const [filename, setFilename] = useState("video_30s_Final")
-  const [format, setFormat] = useState<Format>("MP4")
-  const [resolution, setResolution] = useState<Resolution>("4K")
-  const [fps, setFps] = useState<Fps>("60")
-  const [proRes, setProRes] = useState(true)
-  const [twoPass, setTwoPass] = useState(true)
+  const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const projectId = params.get("project")
+  const { accessToken } = useAuth()
+
+  const [filename,   setFilename]   = useState("video_export")
+  const [format,     setFormat]     = useState<Format>("MP4")
+  const [resolution, setResolution] = useState<Resolution>("1080p")
+  const [fps,        setFps]        = useState<Fps>("30")
+  const [proRes,     setProRes]     = useState(false)
+  const [twoPass,    setTwoPass]    = useState(false)
+
+  const [phase,      setPhase]      = useState<ExportPhase>("idle")
+  const [progress,   setProgress]   = useState(0)
+  const [outputUrl,  setOutputUrl]  = useState<string | null>(null)
+  const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
+  const [exportId,   setExportId]   = useState<string | null>(null)
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+  }
+
+  useEffect(() => () => stopPolling(), [])
+
+  const startPolling = (id: string) => {
+    if (!accessToken) return
+    pollRef.current = setInterval(async () => {
+      try {
+        const job = await api.getExport(accessToken, id)
+        setProgress(job.progress ?? 0)
+        if (job.status === "COMPLETED" || job.status === "completed") {
+          stopPolling()
+          setOutputUrl(job.outputUrl ?? null)
+          setPhase("done")
+        } else if (job.status === "FAILED" || job.status === "failed") {
+          stopPolling()
+          setErrorMsg("Export failed on the server.")
+          setPhase("error")
+        }
+      } catch {
+        // keep polling — transient network error
+      }
+    }, 2000)
+  }
+
+  const handleExport = async () => {
+    if (!accessToken || !projectId) {
+      setErrorMsg("No project loaded. Open a project in the editor first.")
+      setPhase("error")
+      return
+    }
+    setPhase("submitting")
+    setErrorMsg(null)
+    setProgress(0)
+    try {
+      const job = await api.createExport(accessToken, {
+        projectId,
+        format: format.toLowerCase(),
+        quality: resolution,
+        settings: { fps, proRes, twoPass, filename },
+      })
+      setExportId(job.id)
+      setPhase("polling")
+      startPolling(job.id)
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Failed to start export")
+      setPhase("error")
+    }
+  }
+
+  const handleCancel = async () => {
+    stopPolling()
+    if (accessToken && exportId) {
+      try { await api.cancelExport(accessToken, exportId) } catch { /* ignore */ }
+    }
+    setPhase("idle")
+    setProgress(0)
+    setExportId(null)
+  }
+
+  const handleClose = () => navigate(-1)
+
+  const busy = phase === "submitting" || phase === "polling"
 
   return (
     <div className="grid min-h-screen place-items-center bg-black/60 p-4 backdrop-blur-sm">
@@ -32,19 +115,17 @@ export function ExportDialog() {
             <h2 className="text-sm font-semibold text-foreground">Export Project</h2>
             <p className="text-[11px] text-muted-foreground">Choose your output format and quality</p>
           </div>
-          <Link
-            to="/editor"
+          <button
+            onClick={handleClose}
             className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Close"
           >
-            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </Link>
+            <X className="size-4" />
+          </button>
         </div>
 
         <div className="space-y-4 p-5">
+          {/* Filename */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               Filename
@@ -53,7 +134,8 @@ export function ExportDialog() {
               <input
                 value={filename}
                 onChange={(e) => setFilename(e.target.value)}
-                className="flex-1 bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                disabled={busy}
+                className="flex-1 bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
                 placeholder="my-video"
               />
               <span className="grid place-items-center border-l border-border/60 bg-muted/40 px-2 font-mono text-[11px] text-muted-foreground">
@@ -62,6 +144,7 @@ export function ExportDialog() {
             </div>
           </div>
 
+          {/* Resolution */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               Resolution
@@ -71,7 +154,8 @@ export function ExportDialog() {
                 <button
                   key={r.id}
                   onClick={() => setResolution(r.id)}
-                  className={`flex flex-col items-center rounded-md border px-2 py-2 text-xs transition-colors ${
+                  disabled={busy}
+                  className={`flex flex-col items-center rounded-md border px-2 py-2 text-xs transition-colors disabled:opacity-50 ${
                     resolution === r.id
                       ? "border-primary bg-primary/10 text-foreground"
                       : "border-border/60 bg-background/40 text-muted-foreground hover:border-foreground/40"
@@ -84,6 +168,7 @@ export function ExportDialog() {
             </div>
           </div>
 
+          {/* Format */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               Format
@@ -93,7 +178,8 @@ export function ExportDialog() {
                 <button
                   key={f}
                   onClick={() => setFormat(f)}
-                  className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                  disabled={busy}
+                  className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
                     format === f
                       ? "border-primary bg-primary/10 text-foreground"
                       : "border-border/60 bg-background/40 text-muted-foreground hover:border-foreground/40"
@@ -105,6 +191,7 @@ export function ExportDialog() {
             </div>
           </div>
 
+          {/* Frame Rate */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               Frame Rate
@@ -114,7 +201,8 @@ export function ExportDialog() {
                 <button
                   key={f}
                   onClick={() => setFps(f)}
-                  className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                  disabled={busy}
+                  className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
                     fps === f
                       ? "border-primary bg-primary/10 text-foreground"
                       : "border-border/60 bg-background/40 text-muted-foreground hover:border-foreground/40"
@@ -126,45 +214,69 @@ export function ExportDialog() {
             </div>
           </div>
 
+          {/* Options */}
           <div className="space-y-1.5 rounded-md border border-border/60 bg-background/40 p-3">
             <label className="flex cursor-pointer items-center justify-between text-xs text-foreground">
               <span>Use ProRes (Higher Quality)</span>
-              <input
-                type="checkbox"
-                checked={proRes}
-                onChange={(e) => setProRes(e.target.checked)}
-                className="size-4 accent-primary"
-              />
+              <input type="checkbox" checked={proRes} onChange={(e) => setProRes(e.target.checked)} disabled={busy} className="size-4 accent-primary" />
             </label>
             <label className="flex cursor-pointer items-center justify-between text-xs text-foreground">
               <span>Two-Pass Encoding (Smaller File)</span>
-              <input
-                type="checkbox"
-                checked={twoPass}
-                onChange={(e) => setTwoPass(e.target.checked)}
-                className="size-4 accent-primary"
-              />
+              <input type="checkbox" checked={twoPass} onChange={(e) => setTwoPass(e.target.checked)} disabled={busy} className="size-4 accent-primary" />
             </label>
           </div>
+
+          {/* Progress */}
+          {(phase === "polling" || phase === "done") && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-muted-foreground">
+                  {phase === "done" ? "Export complete" : "Exporting…"}
+                </span>
+                <span className="font-mono text-foreground">{progress}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-500"
+                  style={{ width: `${phase === "done" ? 100 : progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {phase === "error" && errorMsg && (
+            <p className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] text-red-400">
+              {errorMsg}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-5 py-3.5">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/editor">Cancel</Link>
+          <Button variant="ghost" size="sm" onClick={handleClose} disabled={busy}>
+            Cancel
           </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/editor">Save Draft</Link>
-          </Button>
-          <Button size="sm" asChild>
-            <Link to="/editor">
-              <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              <span className="ml-1.5">Download</span>
-            </Link>
-          </Button>
+
+          {phase === "done" && outputUrl ? (
+            <Button size="sm" asChild>
+              <a href={outputUrl} download={`${filename}.${format.toLowerCase()}`} target="_blank" rel="noreferrer">
+                <Download className="mr-1.5 size-3.5" />
+                Download
+              </a>
+            </Button>
+          ) : phase === "polling" ? (
+            <Button size="sm" variant="outline" onClick={handleCancel}>
+              Cancel export
+            </Button>
+          ) : (
+            <Button size="sm" onClick={handleExport} disabled={busy || !projectId}>
+              {phase === "submitting" ? (
+                <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Starting…</>
+              ) : (
+                <><Download className="mr-1.5 size-3.5" />Export</>
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </div>

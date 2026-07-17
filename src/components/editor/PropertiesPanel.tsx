@@ -62,6 +62,35 @@ function TimecodeField({
   )
 }
 
+function NumberField({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: number | null | undefined
+  onChange: (v: number) => void
+  placeholder?: string
+}) {
+  const [local, setLocal] = useState(String(value ?? ""))
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { if (!editing) setLocal(String(value ?? "")) }, [value, editing])
+  return (
+    <input
+      type="number"
+      value={local}
+      placeholder={placeholder}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        setEditing(false)
+        const n = parseFloat(local)
+        if (!Number.isNaN(n)) onChange(n)
+      }}
+      className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+    />
+  )
+}
+
 function SliderRow({
   label,
   value,
@@ -104,13 +133,13 @@ function SliderRow({
 }
 
 const VIDEO_FILTERS = [
-  { label: "None", value: "" },
+  { label: "None",  value: "" },
   { label: "Vivid", value: "saturate(1.8) contrast(1.1)" },
   { label: "Matte", value: "contrast(0.9) brightness(1.05) saturate(0.8)" },
-  { label: "B&W", value: "grayscale(1)" },
-  { label: "Warm", value: "sepia(0.4) saturate(1.3)" },
-  { label: "Cool", value: "hue-rotate(30deg) saturate(1.2)" },
-  { label: "Fade", value: "opacity(0.85) brightness(1.1) contrast(0.9)" },
+  { label: "B&W",   value: "grayscale(1)" },
+  { label: "Warm",  value: "sepia(0.4) saturate(1.3)" },
+  { label: "Cool",  value: "hue-rotate(30deg) saturate(1.2)" },
+  { label: "Fade",  value: "opacity(0.85) brightness(1.1) contrast(0.9)" },
 ]
 
 function Section({
@@ -135,11 +164,7 @@ function Section({
           <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {title}
           </h3>
-          {isOpen ? (
-            <ChevronUp className="size-4" />
-          ) : (
-            <ChevronDown className="size-4" />
-          )}
+          {isOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
         </button>
       ) : (
         <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -160,16 +185,13 @@ function EmptyState() {
         </span>
       </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-[12px] font-medium text-foreground">
-          No clip selected
-        </p>
+        <p className="text-[12px] font-medium text-foreground">No clip selected</p>
         <p className="text-[10px] text-muted-foreground">
           Click a clip on the timeline to edit
         </p>
         <p className="mt-2 text-[9px] text-muted-foreground/60">
           Tip: Press{" "}
-          <kbd className="rounded bg-muted px-1 py-0.5 font-mono">S</kbd> to
-          split at playhead
+          <kbd className="rounded bg-muted px-1 py-0.5 font-mono">S</kbd> to split at playhead
         </p>
       </div>
     </aside>
@@ -178,16 +200,16 @@ function EmptyState() {
 
 function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
   const updateClipLocal = useEditorStore((s) => s.updateClipLocal)
-  const syncUpdateClip = useEditorStore((s) => s.syncUpdateClip)
-  const syncDeleteClip = useEditorStore((s) => s.syncDeleteClip)
-  const splitClip = useEditorStore((s) => s.splitClip)
-  const selectClip = useEditorStore((s) => s.selectClip)
-  const seek = useEditorStore((s) => s.seek)
-  const currentTime = useEditorStore((s) => s.playback.currentTime)
+  const syncUpdateClip  = useEditorStore((s) => s.syncUpdateClip)
+  const syncDeleteClip  = useEditorStore((s) => s.syncDeleteClip)
+  const splitClip       = useEditorStore((s) => s.splitClip)
+  const selectClip      = useEditorStore((s) => s.selectClip)
+  const seek            = useEditorStore((s) => s.seek)
+  const currentTime     = useEditorStore((s) => s.playback.currentTime)
   const { accessToken } = useAuth()
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingRef = useRef<Partial<LocalClip>>({})
+  const pendingRef  = useRef<Partial<LocalClip>>({})
 
   const queueSync = (updates: Partial<LocalClip>) => {
     Object.assign(pendingRef.current, updates)
@@ -202,9 +224,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
   }
 
   useEffect(
-    () => () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    },
+    () => () => { if (debounceRef.current) clearTimeout(debounceRef.current) },
     [],
   )
 
@@ -227,35 +247,36 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
     }
   }
 
-  // Text clip data
-  let textData = {
+  // Text clip data — read from metadata (canonical location)
+  const textData = {
     text: "Text",
     fontSize: 32,
     fontWeight: "bold",
     color: "#ffffff",
-  }
-  if (selectedClip.type === "text" && selectedClip.url) {
-    try {
-      textData = { ...textData, ...JSON.parse(selectedClip.url) }
-    } catch {
-      /* ignore */
-    }
-  }
+    x: 50,
+    y: 80,
+    ...(selectedClip.type === "text" && selectedClip.metadata ? selectedClip.metadata : {}),
+  } as { text: string; fontSize: number; fontWeight: string; color: string; x: number; y: number }
+
   const updateText = (patch: Partial<typeof textData>) => {
     const next = { ...textData, ...patch }
-    handleChange({ url: JSON.stringify(next) })
+    handleChange({ metadata: next as Record<string, unknown> })
   }
 
   // Filter for video
   const currentFilter = (selectedClip.metadata?.filter as string) ?? ""
   const updateFilter = (filter: string) => {
-    const meta = { ...(selectedClip.metadata ?? {}), filter }
-    handleChange({ metadata: meta })
+    handleChange({ metadata: { ...(selectedClip.metadata ?? {}), filter } })
   }
 
   const canSplit =
     currentTime > selectedClip.startTime + 0.1 &&
     currentTime < selectedClip.startTime + selectedClip.duration - 0.1
+
+  // Dynamic track count — derive from clips in store
+  const allClips = useEditorStore.getState().clips
+  const maxTrack = allClips.reduce((m, c) => Math.max(m, c.track), 3)
+  const trackCount = maxTrack + 1
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-l border-border/60 bg-card/40">
@@ -282,9 +303,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               {selectedClip.type}
             </span>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Track {selectedClip.track + 1}
-          </p>
+          <p className="text-[11px] text-muted-foreground">Track {selectedClip.track + 1}</p>
           <div className="mt-2 flex gap-1.5">
             <button
               onClick={() => seek(selectedClip.startTime)}
@@ -297,11 +316,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               onClick={handleSplit}
               disabled={!canSplit}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[10px] text-foreground hover:bg-muted disabled:opacity-40"
-              title={
-                canSplit
-                  ? "Split at playhead (S)"
-                  : "Move playhead inside clip to split"
-              }
+              title={canSplit ? "Split at playhead (S)" : "Move playhead inside clip to split"}
             >
               <Scissors className="size-3" />
               Split
@@ -314,44 +329,29 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <FieldLabel>Start</FieldLabel>
-                <TimecodeField
-                  value={selectedClip.startTime}
-                  onChange={(v) => handleChange({ startTime: v })}
-                />
+                <TimecodeField value={selectedClip.startTime} onChange={(v) => handleChange({ startTime: v })} />
               </div>
               <div>
                 <FieldLabel>Duration</FieldLabel>
-                <TimecodeField
-                  value={selectedClip.duration}
-                  onChange={(v) => handleChange({ duration: Math.max(0.1, v) })}
-                />
+                <TimecodeField value={selectedClip.duration} onChange={(v) => handleChange({ duration: Math.max(0.1, v) })} />
               </div>
               <div>
                 <FieldLabel>Trim Start</FieldLabel>
-                <TimecodeField
-                  value={selectedClip.trimStart ?? 0}
-                  onChange={(v) => handleChange({ trimStart: v })}
-                />
+                <TimecodeField value={selectedClip.trimStart ?? 0} onChange={(v) => handleChange({ trimStart: v })} />
               </div>
               <div>
                 <FieldLabel>Trim End</FieldLabel>
-                <TimecodeField
-                  value={selectedClip.trimEnd ?? selectedClip.duration}
-                  onChange={(v) => handleChange({ trimEnd: v })}
-                />
+                <TimecodeField value={selectedClip.trimEnd ?? selectedClip.duration} onChange={(v) => handleChange({ trimEnd: v })} />
               </div>
             </div>
           </Section>
 
-          {(selectedClip.type === "video" ||
-            selectedClip.type === "audio") && (
+          {(selectedClip.type === "video" || selectedClip.type === "audio") && (
             <Section title="Audio">
               <SliderRow
                 label="Volume"
                 value={selectedClip.volume ?? 1}
-                min={0}
-                max={1}
-                step={0.01}
+                min={0} max={1} step={0.01}
                 onChange={(v) => handleChange({ volume: v })}
                 display={`${Math.round((selectedClip.volume ?? 1) * 100)}%`}
                 onDoubleClick={() => handleChange({ volume: 1 })}
@@ -364,13 +364,79 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               <SliderRow
                 label="Opacity"
                 value={selectedClip.opacity ?? 1}
-                min={0}
-                max={1}
-                step={0.01}
+                min={0} max={1} step={0.01}
                 onChange={(v) => handleChange({ opacity: v })}
                 display={`${Math.round((selectedClip.opacity ?? 1) * 100)}%`}
                 onDoubleClick={() => handleChange({ opacity: 1 })}
               />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <FieldLabel>X (%)</FieldLabel>
+                  <NumberField value={selectedClip.x} onChange={(v) => handleChange({ x: v })} placeholder="0" />
+                </div>
+                <div>
+                  <FieldLabel>Y (%)</FieldLabel>
+                  <NumberField value={selectedClip.y} onChange={(v) => handleChange({ y: v })} placeholder="0" />
+                </div>
+                <div>
+                  <FieldLabel>Width (px)</FieldLabel>
+                  <NumberField value={selectedClip.width ?? undefined} onChange={(v) => handleChange({ width: v })} placeholder="auto" />
+                </div>
+                <div>
+                  <FieldLabel>Height (px)</FieldLabel>
+                  <NumberField value={selectedClip.height ?? undefined} onChange={(v) => handleChange({ height: v })} placeholder="auto" />
+                </div>
+              </div>
+            </Section>
+          )}
+
+          {selectedClip.type === "text" && (
+            <Section title="Text">
+              <div>
+                <FieldLabel>Text content</FieldLabel>
+                <textarea
+                  rows={2}
+                  value={textData.text}
+                  onChange={(e) => updateText({ text: e.target.value })}
+                  className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+              <div>
+                <FieldLabel>Font size</FieldLabel>
+                <NumberField value={textData.fontSize} onChange={(v) => updateText({ fontSize: v })} />
+              </div>
+              <div>
+                <FieldLabel>Color</FieldLabel>
+                <input
+                  type="color"
+                  value={textData.color}
+                  onChange={(e) => updateText({ color: e.target.value })}
+                  className="h-8 w-full cursor-pointer rounded-md border border-border bg-background"
+                />
+              </div>
+              <div>
+                <FieldLabel>Weight</FieldLabel>
+                <select
+                  value={textData.fontWeight}
+                  onChange={(e) => updateText({ fontWeight: e.target.value })}
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
+                >
+                  <option value="normal">Normal</option>
+                  <option value="500">Medium</option>
+                  <option value="600">Semi Bold</option>
+                  <option value="bold">Bold</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <FieldLabel>X (%)</FieldLabel>
+                  <NumberField value={textData.x} onChange={(v) => updateText({ x: v })} />
+                </div>
+                <div>
+                  <FieldLabel>Y (%)</FieldLabel>
+                  <NumberField value={textData.y} onChange={(v) => updateText({ y: v })} />
+                </div>
+              </div>
             </Section>
           )}
 
@@ -379,9 +445,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               <SliderRow
                 label="Rotation (°)"
                 value={selectedClip.rotation ?? 0}
-                min={-180}
-                max={180}
-                step={1}
+                min={-180} max={180} step={1}
                 onChange={(v) => handleChange({ rotation: v })}
                 display={`${selectedClip.rotation ?? 0}°`}
                 onDoubleClick={() => handleChange({ rotation: 0 })}
@@ -396,9 +460,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                   className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
                 >
                   {VIDEO_FILTERS.map((f) => (
-                    <option key={f.label} value={f.value}>
-                      {f.label}
-                    </option>
+                    <option key={f.label} value={f.value}>{f.label}</option>
                   ))}
                 </select>
               </div>
@@ -407,64 +469,16 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               <FieldLabel>Track</FieldLabel>
               <select
                 value={selectedClip.track}
-                onChange={(e) =>
-                  handleChange({ track: parseInt(e.target.value, 10) })
-                }
+                onChange={(e) => handleChange({ track: parseInt(e.target.value, 10) })}
                 className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
               >
-                {[0, 1, 2, 3].map((t) => (
-                  <option key={t} value={t}>
-                    Track {t + 1}
-                  </option>
+                {Array.from({ length: trackCount }, (_, i) => (
+                  <option key={i} value={i}>Track {i + 1}</option>
                 ))}
               </select>
             </div>
           </Section>
         </div>
-
-        {/* Text clip editing */}
-        {selectedClip.type === "text" && (
-          <Section title="Text">
-            <div>
-              <FieldLabel>Text content</FieldLabel>
-              <textarea
-                rows={2}
-                value={textData.text}
-                onChange={(e) => updateText({ text: e.target.value })}
-                className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-            <div>
-              <FieldLabel>Font size</FieldLabel>
-              <TimecodeField
-                value={textData.fontSize}
-                onChange={(v) => updateText({ fontSize: v })}
-              />
-            </div>
-            <div>
-              <FieldLabel>Color</FieldLabel>
-              <input
-                type="color"
-                value={textData.color}
-                onChange={(e) => updateText({ color: e.target.value })}
-                className="h-8 w-full cursor-pointer rounded-md border border-border bg-background"
-              />
-            </div>
-            <div>
-              <FieldLabel>Weight</FieldLabel>
-              <select
-                value={textData.fontWeight}
-                onChange={(e) => updateText({ fontWeight: e.target.value })}
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
-              >
-                <option value="normal">Normal</option>
-                <option value="500">Medium</option>
-                <option value="600">Semi Bold</option>
-                <option value="bold">Bold</option>
-              </select>
-            </div>
-          </Section>
-        )}
 
         {/* Delete */}
         <div className="border-t border-border/60 pt-4">

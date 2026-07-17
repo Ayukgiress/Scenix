@@ -10,8 +10,51 @@ import { PropertiesPanel } from "@/components/editor/PropertiesPanel"
 import { Timeline } from "@/components/editor/Timeline"
 import { useEditorStore } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
-import { useEditorShortcuts } from "@/hooks/useEditorShortcuts"
+import { useEditorShortcuts, shortcutHelpBus } from "@/hooks/useEditorShortcuts"
 import { realtimeService } from "@/services/realtimeService"
+import { X } from "lucide-react"
+
+const SHORTCUTS = [
+  { key: "Space",          desc: "Play / Pause" },
+  { key: "S",              desc: "Split clip at playhead" },
+  { key: "M",              desc: "Mute / unmute selected clip" },
+  { key: "Delete",         desc: "Delete selected clip" },
+  { key: "← / →",         desc: "Seek 1 second" },
+  { key: "Shift + ← / →", desc: "Seek 5 seconds" },
+  { key: ", / .",          desc: "Step one frame" },
+  { key: "Home / End",     desc: "Jump to start / end" },
+  { key: "+ / -",          desc: "Zoom in / out" },
+  { key: "Ctrl+Z",         desc: "Undo" },
+  { key: "Ctrl+Shift+Z",   desc: "Redo" },
+  { key: "Escape",         desc: "Deselect clip" },
+  { key: "?",              desc: "Show this help" },
+]
+
+function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-80 overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="text-[13px] font-semibold text-foreground">Keyboard shortcuts</h2>
+          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="divide-y divide-border/60">
+          {SHORTCUTS.map((s) => (
+            <div key={s.key} className="flex items-center justify-between px-4 py-2">
+              <span className="text-[11px] text-muted-foreground">{s.desc}</span>
+              <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">{s.key}</kbd>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 type LoadState = "init" | "loading" | "ready" | "missing" | "error" | "no-auth"
 type SidebarTab = "media" | "audio" | "text" | "effects"
@@ -41,8 +84,11 @@ export function EditorPage() {
   const [loadState, setLoadState] = useState<LoadState>("init")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<SidebarTab>("media")
+  const [showShortcuts, setShowShortcuts] = useState(false)
 
   useEditorShortcuts()
+
+  useEffect(() => shortcutHelpBus.subscribe(() => setShowShortcuts(true)), [])
 
   // Hold a reference to the realtime socket for the lifetime of the
   // editor and leave the project when this page is unmounted.
@@ -245,6 +291,7 @@ export function EditorPage() {
   // ─── Main editor ─────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
+      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
       <EditorTopbar />
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel */}

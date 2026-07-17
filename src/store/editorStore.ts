@@ -1,6 +1,5 @@
-import { realtimeService } from "@/services/realtimeService";
 import { create } from "zustand";
-import type { TimelineClip, PlaybackState, MediaAsset } from "@/types/editor";
+import type { TimelineClip, PlaybackState, MediaAsset, Effect } from "@/types/editor";
 import {
   api,
   clipFromServer,
@@ -9,7 +8,9 @@ import {
   type Project,
 } from "@/lib/api";
 
-export type ClipType = "video" | "audio" | "image" | "text";
+export type ClipType = "video" | "audio" | "image" | "text" | "sticker";
+
+export type { Effect } from "@/types/editor";
 
 export interface LocalClip extends Omit<TimelineClip, "file"> {
   serverId?: string;
@@ -23,9 +24,9 @@ export interface LocalClip extends Omit<TimelineClip, "file"> {
   y?: number;
   width?: number | null;
   height?: number | null;
-  // Stores text JSON payload or any clip-level metadata
   metadata?: Record<string, unknown>;
   transforms?: { x: number; y: number; scale: number; rotation: number; opacity: number };
+  effects: Effect[]; // Clip-specific effects
 }
 
 export interface LocalMedia extends Omit<MediaAsset, "file"> {
@@ -43,6 +44,11 @@ export interface SaveState {
 
 export type ConnectionStatus = "connected" | "disconnected" | "connecting" | "error";
 
+// Undo/redo snapshot — only clips are tracked (the most mutation-heavy state)
+interface HistoryEntry {
+  clips: LocalClip[];
+}
+
 interface EditorState {
   project: Project | null;
   projectId: string | null;
@@ -53,14 +59,22 @@ interface EditorState {
 
   clips: LocalClip[];
   mediaAssets: LocalMedia[];
-  effects: string[];
 
   playback: PlaybackState;
   selectedClipId: string | null;
   zoom: number;
 
+  // Aspect ratio for preview canvas
+  aspectRatio: "16/9" | "9/16" | "1/1" | "4/3";
+
   save: SaveState;
   connectionStatus: ConnectionStatus;
+
+  // Undo / redo
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+  canUndo: boolean;
+  canRedo: boolean;
 
   // ─── Project lifecycle ──────────────────────────────────────────────────
   setProject: (project: Project) => void;
@@ -92,23 +106,32 @@ interface EditorState {
   syncUpdateClip: (id: string, updates: Partial<LocalClip>, token: string) => Promise<void>;
   syncDeleteClip: (id: string, token: string) => Promise<void>;
 
+  // ─── Effects ───────────────────────────────────────────────────────────
+  addEffectToClip: (clipId: string, effect: Effect) => void;
+  removeEffectFromClip: (clipId: string, effectId: string) => void;
+  updateEffectInClip: (clipId: string, effectId: string, updates: Partial<Effect>) => void;
+  setClipEffects: (clipId: string, effects: Effect[]) => void;
+
   // ─── Media ─────────────────────────────────────────────────────────────
   setMediaAssets: (assets: LocalMedia[]) => void;
   addMediaAssetLocal: (asset: LocalMedia) => void;
   updateMediaAssetLocal: (id: string, updates: Partial<LocalMedia>) => void;
   removeMediaAssetLocal: (id: string) => void;
 
-  // ─── Effects ───────────────────────────────────────────────────────────
-  setEffects: (effects: string[]) => void;
-
   // ─── Timeline ──────────────────────────────────────────────────────────
   setZoom: (zoom: number) => void;
+  setAspectRatio: (ratio: EditorState["aspectRatio"]) => void;
 
   // ─── Connection ────────────────────────────────────────────────────────
   setConnectionStatus: (status: ConnectionStatus) => void;
 
   setSaveState: (state: Partial<SaveState>) => void;
   resetEditor: () => void;
+
+  // ─── History ───────────────────────────────────────────────────────────
+  pushHistory: () => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 const initialPlayback: PlaybackState = {
@@ -137,7 +160,7 @@ function serverClipToLocal(
     type: media
       ? media.type === "audio" ? "audio" : media.type === "image" ? "image" : "video"
       : metadata?.text !== undefined ? "text" : "video",
-    url: media?.url ?? (metadata?.text !== undefined ? JSON.stringify(metadata) : undefined),
+    url: media?.url ?? undefined,
     startTime: translated.startTime,
     duration: translated.duration,
     track: translated.track,
@@ -152,6 +175,7 @@ function serverClipToLocal(
     width: translated.width,
     height: translated.height,
     metadata: metadata ?? undefined,
+    effects: [], // Initialize empty effects array
   };
 }
 
@@ -176,20 +200,71 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   clips: [],
   mediaAssets: [],
-  effects: [],
   playback: { ...initialPlayback },
   selectedClipId: null,
   zoom: 1,
+  aspectRatio: "16/9",
   save: { lastSavedAt: null, saving: false, error: null },
   connectionStatus: "disconnected",
 
-  setProject: (project) =>
+  past: [],
+  future: [],
+  canUndo: false,
+  canRedo: false,
+
+  // ─── History ─────────────────────────────────────────────────────────────
+  pushHistory: () => {
+    const { clips, past } = get();
+    const entry: HistoryEntry = { clips: clips.map((c) => ({ ...c })) };
+    set({
+      past: [...past.slice(-49), entry],
+      future: [],
+      canUndo: true,
+      canRedo: false,
+    });
+  },
+
+  undo: () => {
+    const { past, clips, future } = get();
+    if (past.length === 0) return;
+    const prev = past[past.length - 1];
+    const newPast = past.slice(0, -1);
+    const currentEntry: HistoryEntry = { clips: clips.map((c) => ({ ...c })) };
+    const duration = prev.clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0);
+    set({
+      clips: prev.clips,
+      past: newPast,
+      future: [currentEntry, ...future],
+      canUndo: newPast.length > 0,
+      canRedo: true,
+      playback: { ...get().playback, duration },
+    });
+  },
+
+  redo: () => {
+    const { past, clips, future } = get();
+    if (future.length === 0) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
+    const currentEntry: HistoryEntry = { clips: clips.map((c) => ({ ...c })) };
+    const duration = next.clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0);
+    set({
+      clips: next.clips,
+      past: [...past, currentEntry],
+      future: newFuture,
+      canUndo: true,
+      canRedo: newFuture.length > 0,
+      playback: { ...get().playback, duration },
+    });
+  },
+
+  setProject: (project: Project) =>
     set({ project, projectId: project.id, projectTitle: project.title, projectStatus: project.status }),
 
-  setProjectTitle: (title) => set({ projectTitle: title }),
-  setProjectStatus: (status) => set({ projectStatus: status }),
+  setProjectTitle: (title: string) => set({ projectTitle: title }),
+  setProjectStatus: (status: string) => set({ projectStatus: status }),
 
-  loadProject: async (projectId, token) => {
+  loadProject: async (projectId: string, token: string) => {
     set({ loadingProject: true, projectError: null, project: null, projectId: null, clips: [], mediaAssets: [] });
     try {
       const project = await api.getProject(token, projectId);
@@ -209,6 +284,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         project, projectId: project.id, projectTitle: project.title,
         projectStatus: project.status, clips, mediaAssets,
         playback: { ...initialPlayback, duration }, loadingProject: false,
+        past: [], future: [], canUndo: false, canRedo: false,
       });
     } catch (err) {
       console.error("Failed to load project", err);
@@ -219,17 +295,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  createProject: async (title, token) => {
+  createProject: async (title: string, token: string) => {
     const project = await api.createProject(token, { title });
     set({
       project, projectId: project.id, projectTitle: project.title,
       projectStatus: project.status, clips: [], mediaAssets: [],
       playback: { ...initialPlayback },
+      past: [], future: [], canUndo: false, canRedo: false,
     });
     return project;
   },
 
-  renameProject: async (title, token) => {
+  renameProject: async (title: string, token: string) => {
     const { projectId, project } = get();
     if (!projectId || !project) return;
     const optimisticTitle = title.trim();
@@ -255,33 +332,35 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   pause: () => set((s) => ({ playback: { ...s.playback, isPlaying: false } })),
   togglePlay: () => set((s) => ({ playback: { ...s.playback, isPlaying: !s.playback.isPlaying } })),
 
-  seek: (time) => {
+  seek: (time: number) => {
     const { playback } = get();
     const clamped = Math.max(0, Math.min(playback.duration || time, time));
     set({ playback: { ...playback, currentTime: clamped, isPlaying: false } });
   },
-  setCurrentTime: (time) => set((s) => ({ playback: { ...s.playback, currentTime: Math.max(0, time) } })),
-  setDuration: (duration) => set((s) => ({ playback: { ...s.playback, duration: Math.max(0, duration) } })),
-  setVolume: (volume) => set((s) => ({ playback: { ...s.playback, volume: Math.max(0, Math.min(1, volume)) } })),
-  setPlaybackRate: (rate) => set((s) => ({ playback: { ...s.playback, playbackRate: rate } })),
+  setCurrentTime: (time: number) => set((s) => ({ playback: { ...s.playback, currentTime: Math.max(0, time) } })),
+  setDuration: (duration: number) => set((s) => ({ playback: { ...s.playback, duration: Math.max(0, duration) } })),
+  setVolume: (volume: number) => set((s) => ({ playback: { ...s.playback, volume: Math.max(0, Math.min(1, volume)) } })),
+  setPlaybackRate: (rate: number) => set((s) => ({ playback: { ...s.playback, playbackRate: rate } })),
 
-  setClips: (clips) => set({ clips }),
+  setClips: (clips: LocalClip[]) => set({ clips }),
 
-  addClipLocal: (clip) =>
+  addClipLocal: (clip: LocalClip) =>
     set((s) => {
-      const newClips = [...s.clips, clip];
+      // Ensure every clip has an effects array
+      const clipWithEffects = { ...clip, effects: clip.effects || [] };
+      const newClips = [...s.clips, clipWithEffects];
       const duration = Math.max(s.playback.duration, clip.startTime + clip.duration);
       return { clips: newClips, playback: { ...s.playback, duration } };
     }),
 
-  updateClipLocal: (id, updates) =>
+  updateClipLocal: (id: string, updates: Partial<LocalClip>) =>
     set((s) => {
       const clips = s.clips.map((c) => c.id === id ? { ...c, ...updates, dirty: true } : c);
       const duration = clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), s.playback.duration);
       return { clips, playback: { ...s.playback, duration } };
     }),
 
-  deleteClipLocal: (id) =>
+  deleteClipLocal: (id: string) =>
     set((s) => ({
       clips: s.clips.filter((c) => c.id !== id),
       selectedClipId: s.selectedClipId === id ? null : s.selectedClipId,
@@ -289,7 +368,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   selectClip: (id) => set({ selectedClipId: id }),
 
-  splitClip: async (id, atTime, token) => {
+  splitClip: async (id: string, atTime: number, token: string) => {
     const { clips, projectId } = get();
     const clip = clips.find((c) => c.id === id);
     if (!clip || !projectId) return;
@@ -297,9 +376,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const splitOffset = atTime - clip.startTime;
     if (splitOffset <= 0.1 || splitOffset >= clip.duration - 0.1) return;
 
-    // Left half
+    get().pushHistory();
+
     const leftDuration = splitOffset;
-    // Right half
     const rightStart = atTime;
     const rightDuration = clip.duration - splitOffset;
     const rightTrimStart = (clip.trimStart ?? 0) + splitOffset;
@@ -316,11 +395,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       dirty: true,
     };
 
-    // Update left half locally
     get().updateClipLocal(id, { duration: leftDuration, trimEnd: (clip.trimStart ?? 0) + leftDuration });
     get().addClipLocal(rightClip);
 
-    // Sync both to server
     if (token) {
       await Promise.all([
         get().syncUpdateClip(id, { duration: leftDuration, trimEnd: (clip.trimStart ?? 0) + leftDuration }, token),
@@ -329,15 +406,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  syncAddClip: async (clip, token) => {
+  syncAddClip: async (clip: LocalClip, token: string) => {
     const { projectId } = get();
     if (!projectId) return null;
     set({ save: { ...get().save, saving: true, error: null } });
     try {
-      // Build metadata for text/sticker clips and volume
       const metadata: Record<string, unknown> = { ...(clip.metadata ?? {}) };
-      if (clip.type === "text" && clip.url) {
-        try { Object.assign(metadata, JSON.parse(clip.url)) } catch { /* ignore */ }
+      if (clip.type === "text" && clip.metadata) {
+        Object.assign(metadata, clip.metadata);
       }
       if (clip.volume !== undefined) metadata.volume = clip.volume;
       if (clip.opacity !== undefined) metadata.opacity = clip.opacity;
@@ -374,7 +450,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  syncUpdateClip: async (id, updates, token) => {
+  syncUpdateClip: async (id: string, updates: Partial<LocalClip>, token: string) => {
     const { projectId, clips } = get();
     const clip = clips.find((c) => c.id === id);
     if (!projectId || !clip) return;
@@ -388,11 +464,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }));
     try {
       const merged = { ...clip, ...updates };
-
-      // Build metadata from merged clip state
       const metadata: Record<string, unknown> = { ...(merged.metadata ?? {}) };
-      if (merged.type === "text" && merged.url) {
-        try { Object.assign(metadata, JSON.parse(merged.url)) } catch { /* ignore */ }
+      if (merged.type === "text" && merged.metadata) {
+        Object.assign(metadata, merged.metadata);
       }
       if (merged.volume !== undefined) metadata.volume = merged.volume;
       if (merged.opacity !== undefined) metadata.opacity = merged.opacity;
@@ -431,10 +505,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  syncDeleteClip: async (id, token) => {
+  syncDeleteClip: async (id: string, token: string) => {
     const { projectId, clips } = get();
     const clip = clips.find((c) => c.id === id);
     if (!projectId) return;
+    get().pushHistory();
     const previous = clip;
     set((s) => ({
       clips: s.clips.filter((c) => c.id !== id),
@@ -450,19 +525,58 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  setMediaAssets: (assets) => set({ mediaAssets: assets }),
-  addMediaAssetLocal: (asset) => set((s) => ({ mediaAssets: [...s.mediaAssets, asset] })),
-  updateMediaAssetLocal: (id, updates) =>
-    set((s) => ({ mediaAssets: s.mediaAssets.map((a) => a.id === id ? { ...a, ...updates } : a) })),
-  removeMediaAssetLocal: (id) =>
-    set((s) => ({ mediaAssets: s.mediaAssets.filter((a) => a.id !== id) })),
-
-  setEffects: (effects) => {
-    set({ effects });
-    realtimeService.updateEffects(effects);
+  // Effect implementations
+  addEffectToClip: (clipId: string, effect: Effect) => {
+    set((state) => ({
+      clips: state.clips.map((clip) => 
+        clip.id === clipId 
+          ? { ...clip, effects: [...clip.effects, effect] }
+          : clip
+      )
+    }));
+  },
+  removeEffectFromClip: (clipId: string, effectId: string) => {
+    set((state) => ({
+      clips: state.clips.map((clip) => 
+        clip.id === clipId 
+          ? { ...clip, effects: clip.effects.filter((e) => e.id !== effectId) }
+          : clip
+      )
+    }));
+  },
+  updateEffectInClip: (clipId: string, effectId: string, updates: Partial<Effect>) => {
+    set((state) => ({
+      clips: state.clips.map((clip) => 
+        clip.id === clipId 
+          ? { 
+              ...clip, 
+              effects: clip.effects.map((e) => 
+                e.id === effectId ? { ...e, ...updates } : e
+              ) 
+            }
+          : clip
+      )
+    }));
+  },
+  setClipEffects: (clipId: string, effects: Effect[]) => {
+    set((state) => ({
+      clips: state.clips.map((clip) => 
+        clip.id === clipId 
+          ? { ...clip, effects }
+          : clip
+      )
+    }));
   },
 
+  setMediaAssets: (assets: LocalMedia[]) => set({ mediaAssets: assets }),
+  addMediaAssetLocal: (asset: LocalMedia) => set((s) => ({ mediaAssets: [...s.mediaAssets, asset] })),
+  updateMediaAssetLocal: (id: string, updates: Partial<LocalMedia>) =>
+    set((s) => ({ mediaAssets: s.mediaAssets.map((a) => a.id === id ? { ...a, ...updates } : a) })),
+  removeMediaAssetLocal: (id: string) =>
+    set((s) => ({ mediaAssets: s.mediaAssets.filter((a) => a.id !== id) })),
+
   setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(4, zoom)) }),
+  setAspectRatio: (ratio) => set({ aspectRatio: ratio }),
   setConnectionStatus: (status) => set({ connectionStatus: status }),
   setSaveState: (state) => set({ save: { ...get().save, ...state } }),
 
@@ -470,10 +584,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       project: null, projectId: null, projectTitle: "Untitled project",
       projectStatus: "draft", loadingProject: false, projectError: null,
-      clips: [], mediaAssets: [], effects: [], playback: { ...initialPlayback },
-      selectedClipId: null, zoom: 1,
+      clips: [], mediaAssets: [], playback: { ...initialPlayback },
+      selectedClipId: null, zoom: 1, aspectRatio: "16/9",
       save: { lastSavedAt: null, saving: false, error: null },
       connectionStatus: "disconnected",
+      past: [], future: [], canUndo: false, canRedo: false,
     }),
 }));
 

@@ -2,6 +2,13 @@ import { useEffect } from "react";
 import { useEditorStore } from "@/store/editorStore";
 import { useAuth } from "@/hooks/useAuth";
 
+// Simple event bus so EditorPage can open the shortcuts modal
+const listeners = new Set<() => void>();
+export const shortcutHelpBus = {
+  subscribe: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn) },
+  emit: () => listeners.forEach((fn) => fn()),
+};
+
 export function useEditorShortcuts() {
   const { accessToken } = useAuth();
 
@@ -17,6 +24,18 @@ export function useEditorShortcuts() {
       ) return;
 
       const store = useEditorStore.getState();
+
+      // Undo / Redo
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") {
+        e.preventDefault();
+        if (e.shiftKey) store.redo(); else store.undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyY") {
+        e.preventDefault();
+        store.redo();
+        return;
+      }
 
       switch (e.code) {
         case "Space":
@@ -34,7 +53,6 @@ export function useEditorShortcuts() {
           store.seek(Math.min(store.playback.duration, store.playback.currentTime + (e.shiftKey ? 5 : 1)));
           break;
 
-        // Frame step: , and . (like Premiere / CapCut)
         case "Comma":
           e.preventDefault();
           store.seek(Math.max(0, store.playback.currentTime - (1 / 30)));
@@ -55,7 +73,6 @@ export function useEditorShortcuts() {
           store.seek(store.playback.duration);
           break;
 
-        // Split clip at playhead (S key — like CapCut)
         case "KeyS":
           if (!e.ctrlKey && !e.metaKey && store.selectedClipId && accessToken) {
             e.preventDefault();
@@ -63,7 +80,6 @@ export function useEditorShortcuts() {
           }
           break;
 
-        // Mute selected clip (M key)
         case "KeyM":
           if (store.selectedClipId && accessToken) {
             e.preventDefault();
@@ -99,6 +115,13 @@ export function useEditorShortcuts() {
         case "NumpadSubtract":
           e.preventDefault();
           store.setZoom(Math.max(0.25, store.zoom - 0.25));
+          break;
+
+        case "Slash":
+          if (e.shiftKey) { // ? key
+            e.preventDefault();
+            shortcutHelpBus.emit();
+          }
           break;
       }
     };

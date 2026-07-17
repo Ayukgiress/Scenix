@@ -9,145 +9,34 @@ import { CreateProjectModal } from "@/components/CreateProjectModal";
 import { realtimeService } from "@/services/realtimeService";
 import type { Project } from "@/types/dashboard";
 import { DashboardLayout } from "@/layouts/DashboardLayout";
+import {
+  FileText, Home, Grid2x2, Sparkles, Download, Users, Settings,
+  Pencil, Share2, Plus, MoreHorizontal, Play, Search, Bell, LogOut,
+} from "lucide-react";
 
 
 
-function Icon({
-  name,
-  className = "size-4",
-}: {
-  name: string;
-  className?: string;
-}) {
-  const props = {
-    viewBox: "0 0 24 24",
-    className,
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "1.8",
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
+type IconName = "file" | "home" | "grid" | "ai" | "export" | "team" | "settings" | "edit" | "share" | "plus" | "dots" | "play" | "search" | "bell" | "logout";
+
+function Icon({ name, className = "size-4" }: { name: IconName | string; className?: string }) {
+  const cls = className;
   switch (name) {
-    case "file":
-      return (
-        <svg {...props}>
-          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-          <polyline points="14 2 14 8 20 8" />
-        </svg>
-      );
-    case "home":
-      return (
-        <svg {...props}>
-          <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z" />
-          <path d="M9 21V12h6v9" />
-        </svg>
-      );
-    case "grid":
-      return (
-        <svg {...props}>
-          <rect x="3" y="3" width="7" height="7" rx="1" />
-          <rect x="14" y="3" width="7" height="7" rx="1" />
-          <rect x="3" y="14" width="7" height="7" rx="1" />
-          <rect x="14" y="14" width="7" height="7" rx="1" />
-        </svg>
-      );
-    case "ai":
-      return (
-        <svg {...props}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
-        </svg>
-      );
-    case "export":
-      return (
-        <svg {...props}>
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-      );
-    case "team":
-      return (
-        <svg {...props}>
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      );
-    case "settings":
-      return (
-        <svg {...props}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      );
-    case "edit":
-      return (
-        <svg {...props}>
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-        </svg>
-      );
-    case "share":
-      return (
-        <svg {...props}>
-          <circle cx="18" cy="5" r="3" />
-          <circle cx="6" cy="12" r="3" />
-          <circle cx="18" cy="19" r="3" />
-          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-        </svg>
-      );
-    case "plus":
-      return (
-        <svg {...props}>
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      );
-    case "dots":
-      return (
-        <svg {...props}>
-          <circle cx="5" cy="12" r="1.2" fill="currentColor" />
-          <circle cx="12" cy="12" r="1.2" fill="currentColor" />
-          <circle cx="19" cy="12" r="1.2" fill="currentColor" />
-        </svg>
-      );
-    case "play":
-      return (
-        <svg {...props}>
-          <polygon
-            points="6 3 20 12 6 21 6 3"
-            fill="currentColor"
-            stroke="none"
-          />
-        </svg>
-      );
-    case "search":
-      return (
-        <svg {...props}>
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-      );
-    case "bell":
-      return (
-        <svg {...props}>
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
-      );
-    case "logout":
-      return (
-        <svg {...props}>
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-          <polyline points="16 17 21 12 16 7" />
-          <line x1="21" y1="12" x2="9" y2="12" />
-        </svg>
-      );
-    default:
-      return null;
+    case "file":     return <FileText className={cls} />;
+    case "home":     return <Home className={cls} />;
+    case "grid":     return <Grid2x2 className={cls} />;
+    case "ai":       return <Sparkles className={cls} />;
+    case "export":   return <Download className={cls} />;
+    case "team":     return <Users className={cls} />;
+    case "settings": return <Settings className={cls} />;
+    case "edit":     return <Pencil className={cls} />;
+    case "share":    return <Share2 className={cls} />;
+    case "plus":     return <Plus className={cls} />;
+    case "dots":     return <MoreHorizontal className={cls} />;
+    case "play":     return <Play className={cls} fill="currentColor" />;
+    case "search":   return <Search className={cls} />;
+    case "bell":     return <Bell className={cls} />;
+    case "logout":   return <LogOut className={cls} />;
+    default:         return null;
   }
 }
 
@@ -179,6 +68,29 @@ function ProjectCard({
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [hover, setHover] = useState(false);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(project.thumb[2] ?? null);
+
+  // Generate a real thumbnail from the first video frame if a URL is available
+  useEffect(() => {
+    const url = project.thumb[2];
+    if (!url || thumbUrl) return;
+    const video = document.createElement("video");
+    video.src = url;
+    video.muted = true;
+    video.preload = "metadata";
+    video.crossOrigin = "anonymous";
+    video.addEventListener("loadeddata", () => {
+      video.currentTime = 0.5;
+    }, { once: true });
+    video.addEventListener("seeked", () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 320; canvas.height = 180;
+      canvas.getContext("2d")?.drawImage(video, 0, 0, 320, 180);
+      setThumbUrl(canvas.toDataURL("image/jpeg", 0.7));
+      video.src = "";
+    }, { once: true });
+    video.load();
+  }, [project.thumb, thumbUrl]);
 
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -198,17 +110,24 @@ function ProjectCard({
       <div
         className="relative aspect-video w-full overflow-hidden"
         style={{
-          background: `linear-gradient(135deg, oklch(0.18 0.06 ${project.thumb[0]}), oklch(0.26 0.1 ${project.thumb[1]}))`,
+          background: thumbUrl
+            ? undefined
+            : `linear-gradient(135deg, oklch(0.18 0.06 ${project.thumb[0]}), oklch(0.26 0.1 ${project.thumb[1]}))`,
         }}
       >
-        {/* fake scanlines */}
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{
-            backgroundImage:
-              "repeating-linear-gradient(0deg, transparent, transparent 3px, oklch(0 0 0 / 0.3) 3px, oklch(0 0 0 / 0.3) 4px)",
-          }}
-        />
+        {thumbUrl && (
+          <img src={thumbUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        )}
+        {!thumbUrl && (
+          /* fake scanlines */
+          <div
+            className="absolute inset-0 opacity-20"
+            style={{
+              backgroundImage:
+                "repeating-linear-gradient(0deg, transparent, transparent 3px, oklch(0 0 0 / 0.3) 3px, oklch(0 0 0 / 0.3) 4px)",
+            }}
+          />
+        )}
         {/* duration badge */}
         <span className="absolute bottom-2 right-2 rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground backdrop-blur-sm">
           {project.duration}
@@ -449,11 +368,20 @@ export function DashboardPage() {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
-          {loading && (
-            <div className="flex h-32 items-center justify-center">
-              <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          {loading ? (
+            <div className="mx-auto w-full p-6">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-24 animate-pulse rounded-xl border border-border bg-card" />
+                ))}
+              </div>
+              <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="aspect-[4/3] animate-pulse rounded-xl border border-border bg-card" />
+                ))}
+              </div>
             </div>
-          )}
+          ) : null}
 
           <div className="mx-auto w-full space-y-8 p-6">
             {/* Stats */}
@@ -466,7 +394,7 @@ export function DashboardPage() {
                   {stats.totalProjects}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  +2 this month
+                  {stats.totalProjects > 0 ? `${stats.totalProjects} total` : "No projects yet"}
                 </p>
               </div>
               <div className="rounded-xl border border-border bg-card p-4">
@@ -488,7 +416,7 @@ export function DashboardPage() {
                   {stats.exports}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  +8 this month
+                  {stats.exports > 0 ? `${stats.exports} total` : "No exports yet"}
                 </p>
               </div>
               <div className="rounded-xl border border-border bg-card p-4">
@@ -499,7 +427,7 @@ export function DashboardPage() {
                   {stats.aiGenerations}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  +12 this month
+                  {stats.aiGenerations > 0 ? `${stats.aiGenerations} total` : "—"}
                 </p>
               </div>
             </div>
@@ -530,15 +458,15 @@ export function DashboardPage() {
               <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
                 <span>
                   <span className="mr-1 inline-block size-2 rounded-full bg-primary align-middle" />
-                  Video — 14.2 GB
+                  Video — {(stats.storageUsed * 0.88).toFixed(1)} GB
                 </span>
                 <span>
                   <span className="mr-1 inline-block size-2 rounded-full bg-blue-400 align-middle" />
-                  Audio — 1.8 GB
+                  Audio — {(stats.storageUsed * 0.12).toFixed(1)} GB
                 </span>
                 <span>
                   <span className="mr-1 inline-block size-2 rounded-full bg-muted-foreground align-middle" />
-                  Free — 33.5 GB
+                  Free — {Math.max(0, stats.storageTotal - stats.storageUsed).toFixed(1)} GB
                 </span>
               </div>
             </div>
@@ -618,7 +546,11 @@ export function DashboardPage() {
                   </div>
                 </div>
                 <div className="rounded-xl border border-border bg-card">
-                  {activities.slice(0, 6).map((a, i) => (
+                  {activities.length === 0 ? (
+                  <div className="flex h-24 items-center justify-center text-[11px] text-muted-foreground">
+                    No recent activity
+                  </div>
+                ) : activities.slice(0, 6).map((a, i) => (
                     <div
                       key={a.id}
                       className={`flex items-start gap-3 px-4 py-3 ${i < Math.min(activities.length, 6) - 1 ? "border-b border-border" : ""}`}

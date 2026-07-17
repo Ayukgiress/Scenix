@@ -444,7 +444,6 @@ export const api = {
   async createCloudinaryUpload(
     token: string,
     data: {
-      folder?: string;
       type?: "IMAGE" | "VIDEO" | "AUDIO" | "OTHER";
       filename?: string;
     },

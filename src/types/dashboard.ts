@@ -16,7 +16,7 @@ export interface Project {
   progress?: number
   hue: number
   updatedAt: string
-  thumb: [number, number]
+  thumb: [number, number, string?]  // [hue1, hue2, optional video/thumbnail url]
 }
 
 export interface Activity {

@@ -1,10 +1,11 @@
 import { useRef, useState, useCallback, useEffect } from "react"
+import WaveSurfer from "wavesurfer.js"
 import { useEditorStore, type LocalClip, type LocalMedia } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
 import { api, uploadToCloudinary } from "@/lib/api"
 
 function localId() {
-  return `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `tmp_${crypto.randomUUID()}`
 }
 
 function readAudioDuration(file: File): Promise<number> {
@@ -29,23 +30,30 @@ function formatDuration(s?: number) {
   return `${m}:${sec.toString().padStart(2, "0")}`
 }
 
-// Fake waveform bars for visual flair
-function WaveformBars({ count = 24 }: { count?: number }) {
-  const bars = Array.from({ length: count }, (_, i) => {
-    const h = 20 + Math.abs(Math.sin(i * 1.3 + i * 0.4)) * 60
-    return h
-  })
-  return (
-    <div className="flex h-8 items-end gap-px">
-      {bars.map((h, i) => (
-        <div
-          key={i}
-          className="w-0.5 rounded-full bg-emerald-400/70"
-          style={{ height: `${h}%` }}
-        />
-      ))}
-    </div>
-  )
+// Real waveform via WaveSurfer
+function WaveformBars({ url }: { url?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const wsRef = useRef<WaveSurfer | null>(null)
+
+  useEffect(() => {
+    if (!containerRef.current || !url) return
+    const ws = WaveSurfer.create({
+      container: containerRef.current,
+      waveColor: "rgba(52,211,153,0.7)",
+      progressColor: "rgba(52,211,153,0.3)",
+      height: 32,
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      interact: false,
+      normalize: true,
+    })
+    wsRef.current = ws
+    ws.load(url).catch(() => {})
+    return () => { ws.destroy(); wsRef.current = null }
+  }, [url])
+
+  return <div ref={containerRef} className="h-8 w-full" style={{ pointerEvents: "none" }} />
 }
 
 export function AudioPanel() {
@@ -89,7 +97,6 @@ export function AudioPanel() {
     try {
       const duration = await readAudioDuration(file)
       const signature = await api.createCloudinaryUpload(accessToken, {
-        folder: `scenix/projects/${projectId}`,
         filename: file.name,
         type: "AUDIO",
       })
@@ -285,7 +292,7 @@ export function AudioPanel() {
                           <span className="text-[9px] text-muted-foreground">{asset.progress ?? 0}%</span>
                         </div>
                       ) : (
-                        <WaveformBars />
+                        <WaveformBars url={asset.url} />
                       )}
                     </div>
                     <p className="mt-0.5 text-[9px] text-muted-foreground">{formatDuration(asset.duration)}</p>

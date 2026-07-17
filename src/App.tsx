@@ -12,8 +12,19 @@ import { SignupPage } from "@/pages/SignupPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { VerifyEmailPage } from "@/pages/VerifyEmailPage"
 import { VerifyPendingPage } from "@/pages/VerifyPendingPage"
-// import { SettingsPage } from "@/pages/SettingsPage"
 import SettingsPage from "./pages/SettingsPage"
+import { DashboardLayout } from "@/layouts/DashboardLayout"
+
+function TeamPage() {
+  return (
+    <DashboardLayout>
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+        <p className="text-[14px] font-medium text-foreground">Team</p>
+        <p className="text-[12px]">Team collaboration is coming soon.</p>
+      </div>
+    </DashboardLayout>
+  )
+}
 
 function App() {
   return (
@@ -35,6 +46,7 @@ function App() {
           <Route path="/auth/verify-pending" element={<VerifyPendingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/team" element={<TeamPage />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

@@ -226,10 +226,7 @@ class RealtimeService {
       if (existing) store.removeMediaAssetLocal(existing.id)
     })
 
-    this.socket.on("effects:updated", (effects: string[]) => {
-      const store = useEditorStore.getState()
-      store.setEffects(effects)
-    })
+    // Clip-specific effects are now managed per-clip, no global effects update needed
 
 
     // ─── Presence / cursor events ─────────────────────────────────────────
