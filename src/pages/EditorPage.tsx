@@ -24,24 +24,6 @@ function Spinner() {
   )
 }
 
-function SidebarTabBtn({
-  active, onClick, title, children,
-}: { active: boolean; onClick: () => void; title: string; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-[9px] font-medium transition-colors ${
-        active
-          ? "bg-primary/15 text-primary"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
 export function EditorPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -264,52 +246,45 @@ export function EditorPage() {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <EditorTopbar />
-      <div className="flex min-h-0 flex-1">
-        {/* CapCut-style icon sidebar */}
-        <nav className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-border/60 bg-card/80 py-2">
-          <SidebarTabBtn active={activeTab === "media"} onClick={() => setActiveTab("media")} title="Media">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5">
-              <rect x="2" y="7" width="15" height="10" rx="2" />
-              <path d="m17 9 5-2v10l-5-2" />
-            </svg>
-            Media
-          </SidebarTabBtn>
-          <SidebarTabBtn active={activeTab === "audio"} onClick={() => setActiveTab("audio")} title="Audio">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5">
-              <path d="M9 18V5l12-2v13" />
-              <circle cx="6" cy="18" r="3" />
-              <circle cx="18" cy="16" r="3" />
-            </svg>
-            Audio
-          </SidebarTabBtn>
-          <SidebarTabBtn active={activeTab === "text"} onClick={() => setActiveTab("text")} title="Text">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5">
-              <polyline points="4 7 4 4 20 4 20 7" />
-              <line x1="9" y1="20" x2="15" y2="20" />
-              <line x1="12" y1="4" x2="12" y2="20" />
-            </svg>
-            Text
-          </SidebarTabBtn>
-          <SidebarTabBtn active={activeTab === "effects"} onClick={() => setActiveTab("effects")} title="Effects">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5">
-              <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-            </svg>
-            Effects
-          </SidebarTabBtn>
-        </nav>
-
-        {/* Panel content */}
-        <div className="flex w-64 shrink-0 flex-col border-r border-border/60 bg-card/40">
-          {activeTab === "media" && <MediaPanel />}
-          {activeTab === "audio" && <AudioPanel />}
-          {activeTab === "text" && <TextPanel />}
-          {activeTab === "effects" && <EffectsPanel />}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Panel */}
+        <div className="flex w-60 shrink-0 flex-col border-r border-border bg-card/60">
+          <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-2">
+            {(["media", "audio", "text", "effects"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  activeTab === tab
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {activeTab === "media" && <MediaPanel />}
+            {activeTab === "audio" && <AudioPanel />}
+            {activeTab === "text" && <TextPanel />}
+            {activeTab === "effects" && <EffectsPanel />}
+          </div>
         </div>
 
-        <PreviewPanel />
-        <PropertiesPanel />
+        {/* Center Panel */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <PreviewPanel />
+          </div>
+          <Timeline />
+        </div>
+
+        {/* Right Panel */}
+        <div className="shrink-0 border-l border-border bg-card/60">
+          <PropertiesPanel />
+        </div>
       </div>
-      <Timeline />
     </div>
-  )
+  );
 }

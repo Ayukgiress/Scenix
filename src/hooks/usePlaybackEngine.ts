@@ -1,58 +1,28 @@
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import { useEditorStore } from "@/store/editorStore"
 
+// Lightweight hook for components that need to drive a <video> element
+// from the store's playback state without owning the RAF loop.
+// PreviewPanel owns the RAF loop; this hook just syncs currentTime to the element.
 export function usePlaybackEngine(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const isPlaying = useEditorStore((state) => state.playback.isPlaying)
   const currentTime = useEditorStore((state) => state.playback.currentTime)
-  const setCurrentTime = useEditorStore((state) => state.setCurrentTime)
-  const pause = useEditorStore((state) => state.pause)
-  const duration = useEditorStore((state) => state.playback.duration)
-
-  const rafRef = useRef<number | undefined>(undefined)
-  const lastTimeRef = useRef(0)
 
   useEffect(() => {
-    if (!videoRef.current) return
-
-    if (isPlaying) {
-      const animate = () => {
-        const now = performance.now()
-        const delta = (now - lastTimeRef.current) / 1000
-
-        if (delta > 0) {
-          const newTime = currentTime + delta
-          
-          if (newTime >= duration) {
-            pause()
-            setCurrentTime(0)
-          } else {
-            setCurrentTime(newTime)
-          }
-        }
-
-        lastTimeRef.current = now
-        rafRef.current = requestAnimationFrame(animate)
-      }
-
-      lastTimeRef.current = performance.now()
-      rafRef.current = requestAnimationFrame(animate)
-    } else {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-      }
-    }
-
-    return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-      }
-    }
-  }, [isPlaying, currentTime, duration, pause, setCurrentTime, videoRef])
-
-  // Sync video element with timeline
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = currentTime
+    const video = videoRef.current
+    if (!video) return
+    if (Math.abs(video.currentTime - currentTime) > 0.2) {
+      try { video.currentTime = currentTime } catch { /* not ready */ }
     }
   }, [currentTime, videoRef])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    if (isPlaying) {
+      video.play().catch((e) => { if (e.name !== "AbortError") console.warn("video play:", e) })
+    } else {
+      video.pause()
+    }
+  }, [isPlaying, videoRef])
 }

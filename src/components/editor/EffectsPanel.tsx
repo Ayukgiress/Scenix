@@ -1,3 +1,6 @@
+import { useEditorStore } from "@/store/editorStore"
+import type { LocalClip } from "@/store/editorStore"
+
 const STICKERS = [
   { emoji: "🔥", label: "Fire" },
   { emoji: "⭐", label: "Star" },
@@ -23,6 +26,34 @@ const FILTERS = [
 ]
 
 export function EffectsPanel() {
+  const effects = useEditorStore((s) => s.effects)
+  const setEffects = useEditorStore((s) => s.setEffects)
+  const addClipLocal = useEditorStore((s) => s.addClipLocal)
+  const currentTime = useEditorStore((s) => s.playback.currentTime)
+
+  const addSticker = (emoji: string, label: string) => {
+    const clip: LocalClip = {
+      id: `tmp_sticker_${Date.now()}`,
+      mediaId: "",
+      type: "sticker",
+      startTime: currentTime,
+      duration: 3,
+      track: 2,
+      trimStart: 0,
+      trimEnd: 3,
+      metadata: { text: emoji, label },
+      transforms: { x: 100, y: 100, scale: 1, rotation: 0, opacity: 1 },
+    }
+    addClipLocal(clip)
+  }
+
+  const toggleEffect = (effect: string) => {
+    const newEffects = effects.includes(effect)
+      ? effects.filter((e) => e !== effect)
+      : [...effects, effect]
+    setEffects(newEffects)
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border/60 px-3 py-2.5">
@@ -39,8 +70,13 @@ export function EffectsPanel() {
           {FILTERS.map((f) => (
             <button
               key={f.name}
-              title="Select a video clip first to apply filters (coming soon)"
-              className="flex flex-col items-center gap-1 rounded-lg border border-border/60 bg-card p-2 text-center transition-all hover:border-primary/50"
+              onClick={() => toggleEffect(f.style)}
+              title={f.name}
+              className={`flex flex-col items-center gap-1 rounded-lg border bg-card p-2 text-center transition-all hover:border-primary/50 ${
+                effects.includes(f.style)
+                  ? "border-primary/80"
+                  : "border-border/60"
+              }`}
             >
               <div
                 className="size-10 rounded-md bg-gradient-to-br from-violet-500 to-pink-500"
@@ -58,7 +94,8 @@ export function EffectsPanel() {
           {STICKERS.map((s) => (
             <button
               key={s.label}
-              title="Sticker overlays coming soon"
+              onClick={() => addSticker(s.emoji, s.label)}
+              title={`Add ${s.label} sticker`}
               className="flex flex-col items-center gap-0.5 rounded-lg border border-border/60 bg-card p-2 transition-all hover:border-primary/50 hover:bg-card/80"
             >
               <span className="text-2xl">{s.emoji}</span>
@@ -67,9 +104,7 @@ export function EffectsPanel() {
           ))}
         </div>
 
-        <p className="mt-4 text-center text-[10px] text-muted-foreground">
-          Canvas overlays via Fabric.js — coming soon
-        </p>
+
       </div>
     </div>
   )

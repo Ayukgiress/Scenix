@@ -1,3 +1,4 @@
+import { List, Grid, Upload, Trash2 } from "lucide-react"
 import { useRef, useState, useCallback, useEffect } from "react"
 import {
   useEditorStore,
@@ -5,9 +6,11 @@ import {
   type LocalMedia,
 } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
+import { useToast } from "@/hooks/useToast"
 import { api, uploadToCloudinary } from "@/lib/api"
 
 type AssetType = "video" | "audio" | "image"
+type ViewMode = "grid" | "list"
 
 function detectAssetType(file: File): AssetType {
   if (file.type.startsWith("video")) return "video"
@@ -20,7 +23,9 @@ function readMediaDuration(file: File, kind: AssetType): Promise<number> {
     if (kind === "image") return resolve(5)
     const url = URL.createObjectURL(file)
     const el: HTMLMediaElement =
-      kind === "audio" ? document.createElement("audio") : document.createElement("video")
+      kind === "audio"
+        ? document.createElement("audio")
+        : document.createElement("video")
     el.preload = "metadata"
     el.src = url
     el.onloadedmetadata = () => {
@@ -39,12 +44,32 @@ function localId() {
   return `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-function AssetPreview({ asset }: { asset: LocalMedia }) {
+function formatDuration(sec: number): string {
+  if (typeof sec !== "number" || !isFinite(sec) || sec < 0) return "00:00.00"
+  const minutes = Math.floor(sec / 60)
+  const seconds = Math.floor(sec % 60)
+  const ms = Math.floor((sec % 1) * 100)
+  return `${minutes.toString().padStart(2, "0")}:${seconds
+    .toString()
+    .padStart(2, "0")}.${ms.toString().padStart(2, "0")}`
+}
+
+function AssetPreview({
+  asset,
+  view,
+}: {
+  asset: LocalMedia
+  view: ViewMode
+}) {
+  const commonClass =
+    view === "grid"
+      ? "h-full w-full object-cover"
+      : "h-8 w-14 object-cover rounded"
   if (asset.type === "video") {
     return (
       <video
         src={asset.url}
-        className="h-full w-full object-cover"
+        className={commonClass}
         muted
         playsInline
         preload="metadata"
@@ -53,11 +78,15 @@ function AssetPreview({ asset }: { asset: LocalMedia }) {
   }
   if (asset.type === "image") {
     return (
-      <img src={asset.url} alt={asset.name} className="h-full w-full object-cover" />
+      <img src={asset.url} alt={asset.name} className={commonClass} />
     )
   }
   return (
-    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5 text-[10px] text-foreground/70">
+    <div
+      className={`flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5 text-[10px] text-foreground/70 ${
+        view === "grid" ? "h-full w-full" : "h-8 w-14 rounded"
+      }`}
+    >
       audio
     </div>
   )
@@ -82,8 +111,12 @@ export function MediaPanel() {
   const [uploadingCount, setUploadingCount] = useState(0)
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<"all" | AssetType>("all")
+  const [view, setView] = useState<ViewMode>("grid")
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState<LocalMedia | null>(null)
+
+  const toast = useToast()
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -149,11 +182,13 @@ export function MediaPanel() {
         }
       } catch (err) {
         console.error("Upload failed", err)
+        const msg = err instanceof Error ? err.message : "Upload failed"
         updateMediaAssetLocal(tempId, {
           uploading: false,
           progress: 0,
-          error: err instanceof Error ? err.message : "Upload failed",
+          error: msg,
         })
+        toast.error(msg)
       } finally {
         setUploadingCount((c) => Math.max(0, c - 1))
       }
@@ -233,17 +268,27 @@ export function MediaPanel() {
   }
 
   const handleDeleteAsset = async (asset: LocalMedia) => {
-    if (!accessToken || !asset.serverId) {
-      removeMediaAssetLocal(asset.id)
+    setIsDeleting(asset)
+  }
+
+  const confirmDelete = async () => {
+    if (!isDeleting) return
+    if (!accessToken || !isDeleting.serverId) {
+      removeMediaAssetLocal(isDeleting.id)
+      setIsDeleting(null)
       return
     }
     try {
-      await api.deleteMedia(accessToken, asset.serverId)
-      removeMediaAssetLocal(asset.id)
+      await api.deleteMedia(accessToken, isDeleting.serverId)
+      removeMediaAssetLocal(isDeleting.id)
+      toast.success("Media deleted")
     } catch (err) {
       console.error("Failed to delete media", err)
-      setError(err instanceof Error ? err.message : "Failed to delete media")
+      const msg = err instanceof Error ? err.message : "Failed to delete media"
+      setError(msg)
+      toast.error(msg)
     }
+    setIsDeleting(null)
   }
 
   const visibleAssets = mediaAssets
@@ -257,22 +302,20 @@ export function MediaPanel() {
         dragOver ? "ring-2 ring-primary ring-inset" : ""
       }`}
     >
-      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2.5">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Media
         </span>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={!projectId || !accessToken}
-          className="rounded p-1 text-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-          title={projectId ? "Upload media" : "Open a project first"}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
-        </button>
+        {mediaAssets.length > 0 && (
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!projectId || !accessToken}
+            className="rounded p-1 text-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            title={projectId ? "Upload media" : "Open a project first"}
+          >
+            <Upload className="size-4" />
+          </button>
+        )}
       </div>
 
       <input
@@ -284,24 +327,48 @@ export function MediaPanel() {
         onChange={handleFileInput}
       />
 
-      <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search media"
-          className="h-7 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus:border-primary"
-        />
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as "all" | AssetType)}
-          className="h-7 rounded-md border border-border bg-background px-1.5 text-[10px] text-foreground outline-none focus:border-primary"
-        >
-          <option value="all">All</option>
-          <option value="video">Video</option>
-          <option value="audio">Audio</option>
-          <option value="image">Image</option>
-        </select>
-      </div>
+      {mediaAssets.length > 0 && (
+        <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search media"
+            className="h-7 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus:border-primary"
+          />
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as "all" | AssetType)}
+            className="h-7 rounded-md border border-border bg-background px-1.5 text-[10px] text-foreground outline-none focus:border-primary"
+          >
+            <option value="all">All</option>
+            <option value="video">Video</option>
+            <option value="audio">Audio</option>
+            <option value="image">Image</option>
+          </select>
+          <div className="flex items-center rounded-md border border-border bg-background">
+            <button
+              onClick={() => setView("list")}
+              className={`px-1.5 py-1 ${
+                view === "list"
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <List className="size-4" />
+            </button>
+            <button
+              onClick={() => setView("grid")}
+              className={`px-1.5 py-1 ${
+                view === "grid"
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Grid className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-[10px] text-red-400">
@@ -327,27 +394,49 @@ export function MediaPanel() {
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {visibleAssets.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+        {isDeleting && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-sm rounded-lg bg-background p-4 shadow-lg">
+              <p className="text-sm text-foreground">Are you sure you want to delete this file?</p>
+              <p className="mt-1 text-xs text-muted-foreground">{isDeleting.name}</p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button onClick={() => setIsDeleting(null)} className="rounded-md bg-muted px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/80">
+                  Cancel
+                </button>
+                <button onClick={confirmDelete} className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600">
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {mediaAssets.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center p-4">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!projectId || !accessToken}
+              className="flex h-40 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/20 transition-colors hover:border-primary/60 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Upload className="size-8 text-muted-foreground" />
+              <p className="mt-2 text-[12px] font-medium text-foreground">
+                Drop files here or click to upload
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                Supports video, audio, and images
+              </p>
+            </button>
+          </div>
+        ) : visibleAssets.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-[12px] font-medium text-foreground">
-              {mediaAssets.length === 0 ? "No media yet" : "No matches"}
+              No matches found
             </p>
             <p className="text-[10px] text-muted-foreground">
-              {mediaAssets.length === 0
-                ? "Drop video / audio / image files here"
-                : "Try a different search or filter"}
+              Try a different search or filter
             </p>
-            {mediaAssets.length === 0 && (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!projectId || !accessToken}
-                className="rounded-md bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                Upload files
-              </button>
-            )}
           </div>
-        ) : (
+        ) : view === "grid" ? (
           <div className="grid grid-cols-2 gap-2 p-2">
             {visibleAssets.map((asset) => (
               <div
@@ -367,7 +456,7 @@ export function MediaPanel() {
                   disabled={asset.uploading || !!asset.error}
                   onClick={() => handleAddToTimeline(asset)}
                 >
-                  <AssetPreview asset={asset} />
+                  <AssetPreview asset={asset} view="grid" />
                   {asset.uploading && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60">
                       <div className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -389,16 +478,60 @@ export function MediaPanel() {
                     className="rounded p-0.5 text-foreground/50 hover:bg-red-500/10 hover:text-red-400"
                     title="Delete"
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
+                    <Trash2 className="size-3" />
                   </button>
                 </div>
                 <span className="pointer-events-none absolute right-1 top-1 rounded bg-black/60 px-1 py-0.5 text-[8px] uppercase text-white">
                   {asset.type}
                 </span>
               </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1 p-2">
+            {visibleAssets.map((asset) => (
+              <button
+                key={asset.id}
+                type="button"
+                className={`group flex w-full items-center gap-2 rounded-md p-1.5 text-left transition-colors hover:bg-muted ${
+                  asset.error
+                    ? "bg-red-500/10"
+                    : asset.uploading
+                      ? "opacity-60"
+                      : ""
+                }`}
+                disabled={asset.uploading || !!asset.error}
+                onClick={() => handleAddToTimeline(asset)}
+                title={asset.error ?? asset.name}
+              >
+                <div className="shrink-0">
+                  <AssetPreview asset={asset} view="list" />
+                </div>
+                <div className="flex-1 truncate">
+                  <p className="truncate text-[11px] font-medium">
+                    {asset.name}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground">
+                    {formatDuration(asset.duration ?? 0)}
+                  </p>
+                </div>
+                {asset.uploading && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    <span>{asset.progress ?? 0}%</span>
+                  </div>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDeleteAsset(asset)
+                  }}
+                  className="ml-auto rounded p-1 text-foreground/50 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400"
+                  title="Delete"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </button>
             ))}
           </div>
         )}

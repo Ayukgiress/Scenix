@@ -1,21 +1,16 @@
+import { ConfirmationModal } from "@/components/ConfirmationModal";
+import { useToast } from "@/hooks/useToast";
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { EmailVerificationBanner } from "@/components/EmailVerificationBanner";
 import { useDashboardStore } from "@/store/dashboardStore";
+import { CreateProjectModal } from "@/components/CreateProjectModal";
 import { realtimeService } from "@/services/realtimeService";
 import type { Project } from "@/types/dashboard";
+import { DashboardLayout } from "@/layouts/DashboardLayout";
 
-const NAV = [
-  { label: "overview", icon: "home", path: "/dashboard" },
-  { label: "Projects", icon: "grid", path: "/dashboard" },
-  { label: "Media", icon: "file", path: "/media" },
-  { label: "Exports", icon: "export", path: "/exports" },
-  { label: "Team", icon: "team", path: "/dashboard" },
-  { label: "Settings", icon: "settings", path: "/settings" },
-];
 
-// ─── Icons ────────────────────────────────────────────────────────────────────
 
 function Icon({
   name,
@@ -175,10 +170,23 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ─── Project card ─────────────────────────────────────────────────────────────
-
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({
+  project,
+  deleteProject,
+}: {
+  project: Project;
+  deleteProject: (id: string) => void;
+}) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [hover, setHover] = useState(false);
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    deleteProject(project.id);
+    setDropdownOpen(false);
+  };
+
   return (
     <Link
       to={`/editor?project=${project.id}`}
@@ -222,9 +230,37 @@ function ProjectCard({ project }: { project: Project }) {
           <p className="truncate text-[13px] font-medium text-foreground">
             {project.title}
           </p>
-          <button className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
-            <Icon name="dots" className="size-4" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDropdownOpen(!dropdownOpen);
+              }}
+              className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Icon name="dots" className="size-4" />
+            </button>
+            {/* Dropdown menu */}
+            {dropdownOpen && (
+              <div className="absolute right-0 mt-2 w-48 rounded-md bg-card shadow-lg ring-1 ring-border ring-opacity-5 focus:outline-none">
+                <div
+                  className="py-1"
+                  role="menu"
+                  aria-orientation="vertical"
+                  aria-labelledby="options-menu"
+                >
+                  <button
+                    onClick={handleDelete}
+                    className="block w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-muted"
+                    role="menuitem"
+                  >
+                    Delete Project
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center justify-between">
           <StatusBadge status={project.status} />
@@ -267,12 +303,17 @@ function ProjectCard({ project }: { project: Project }) {
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const [activeNav, setActiveNav] = useState("Projects");
   const [filter, setFilter] = useState<
     "all" | "DRAFT" | "IN_PROGRESS" | "EXPORTED" | "PUBLISHED" | "ARCHIVED"
   >("all");
   const [search, setSearch] = useState("");
-  const { user, logout, accessToken } = useAuth();
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+
+  const { user, accessToken } = useAuth();
+
+  const { error: toastError, success: toastSuccess } = useToast();
 
   const {
     projects,
@@ -280,11 +321,19 @@ export function DashboardPage() {
     stats,
     loading,
     error,
+    setError,
     fetchProjects,
     fetchMedia,
     fetchExports,
-    setError,
+    deleteProject,
   } = useDashboardStore();
+
+  useEffect(() => {
+    if (error) {
+      toastError(error);
+      setError(null);
+    }
+  }, [error, toastError, setError]);
 
   useEffect(() => {
     if (accessToken) {
@@ -300,15 +349,32 @@ export function DashboardPage() {
   }, []);
 
   const handleCreateProject = async () => {
+    setCreateModalOpen(true);
+  };
+
+  const handleCreateProjectFromModal = async (title: string) => {
     if (!accessToken) return;
-    const title = prompt("Project name:");
-    if (!title?.trim()) return;
     const created = await useDashboardStore
       .getState()
-      .createProjectAndReturn(accessToken, title.trim());
+      .createProjectAndReturn(accessToken, title);
     if (created?.id) {
+      toastSuccess("Project created successfully!");
       navigate(`/editor?project=${created.id}`);
     }
+    setCreateModalOpen(false);
+  };
+
+  const handleDeleteInitiated = (id: string) => {
+    setProjectToDelete(id);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteProject = () => {
+    if (!accessToken || !projectToDelete) return;
+    deleteProject(accessToken, projectToDelete);
+    toastSuccess("Project deleted successfully!");
+    setDeleteModalOpen(false);
+    setProjectToDelete(null);
   };
 
   const emailVerified =
@@ -321,77 +387,21 @@ export function DashboardPage() {
   });
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      {/* ── Sidebar ── */}
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card/40">
-        {/* Logo */}
-        <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-          <Link
-            to="/"
-            className="flex items-center gap-2 text-[13px] font-semibold"
-          >
-            <span className="grid size-7 place-items-center rounded-md bg-foreground text-background">
-              <svg
-                viewBox="0 0 24 24"
-                className="size-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="5" width="18" height="14" rx="2" />
-                <path d="m10 9 5 3-5 3z" fill="currentColor" />
-              </svg>
-            </span>
-            Scenix
-          </Link>
-        </div>
+    <DashboardLayout>
+      <CreateProjectModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onCreate={handleCreateProjectFromModal}
+      />
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={handleDeleteProject}
+        title="Delete Project"
+        message="Are you sure you want to delete this project? This action cannot be undone."
+      />
 
-        {/* Nav */}
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-          {NAV.map((item) => (
-            <Link
-              key={item.label}
-              to={item.path}
-              onClick={() => setActiveNav(item.label)}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors ${
-                activeNav === item.label
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <Icon name={item.icon} className="size-4" />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* User */}
-        <div className="border-t border-border p-3">
-          <div className="flex items-center gap-2.5 rounded-md px-2 py-2">
-            <div className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
-              {user?.name?.charAt(0).toUpperCase() ?? "U"}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-medium text-foreground">
-                {user?.name ?? "User"}
-              </p>
-              <p className="truncate text-[10px] text-muted-foreground">
-                Free plan
-              </p>
-            </div>
-            <button
-              onClick={() => logout()}
-              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Icon name="logout" className="size-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* ── Main ── */}
+      {/* Main content is wrapped by DashboardLayout */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Email verification banner */}
         {!emailVerified && user?.email && (
@@ -427,32 +437,18 @@ export function DashboardPage() {
               <Icon name="bell" className="size-4" />
               <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
             </button>
-            <Link
-              to="/editor"
+            <button
+              onClick={handleCreateProject}
               className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
             >
               <Icon name="plus" className="size-3.5" />
               New project
-            </Link>
+            </button>
           </div>
         </header>
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
-          {error && (
-            <div className="mx-auto max-w-7xl p-6">
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-red-400">
-                <p className="text-sm">{error}</p>
-                <button
-                  onClick={() => setError(null)}
-                  className="mt-2 text-xs underline hover:no-underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          )}
-
           {loading && (
             <div className="flex h-32 items-center justify-center">
               <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -590,7 +586,11 @@ export function DashboardPage() {
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {filtered.map((p) => (
-                      <ProjectCard key={p.id} project={p} />
+                      <ProjectCard
+                        key={p.id}
+                        project={p}
+                        deleteProject={handleDeleteInitiated}
+                      />
                     ))}
                     {/* New project card */}
                     <button
@@ -692,6 +692,6 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }

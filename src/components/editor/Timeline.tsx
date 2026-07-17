@@ -141,7 +141,7 @@ function ClipElement({ clip, zoom }: { clip: LocalClip; zoom: number }) {
   // Parse text clip label
   let clipLabel = clip.type
   if (clip.type === "text" && clip.url) {
-    try { clipLabel = JSON.parse(clip.url).text ?? "Text" } catch { clipLabel = "Text" }
+    try { clipLabel = JSON.parse(clip.url).text ?? "text" } catch { clipLabel = "text" }
   }
 
   return (
@@ -210,6 +210,9 @@ export function Timeline() {
   const selectClip = useEditorStore((s) => s.selectClip)
   const togglePlay = useEditorStore((s) => s.togglePlay)
   const isPlaying = useEditorStore((s) => s.playback.isPlaying)
+  const selectedClipId = useEditorStore((s) => s.selectedClipId)
+  const splitClip = useEditorStore((s) => s.splitClip)
+  const { accessToken } = useAuth()
 
   const remoteCursors = useRealtimeCursors()
 
@@ -262,6 +265,26 @@ export function Timeline() {
             )}
           </button>
 
+          <button
+            onClick={() => {
+              if (selectedClipId && accessToken) {
+                splitClip(selectedClipId, currentTime, accessToken)
+              }
+            }}
+            className="grid size-7 place-items-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
+            title="Split"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+              <path d="M12 2v20M5 12h14" />
+            </svg>
+          </button>
+
+          {/* Blinking record dot - standard video editor convention */}
+          {isPlaying && (
+            <div className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full bg-[var(--scrubber)] animate-pulse" />
+            </div>
+          )}
           <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] text-foreground">
             {formatTime(currentTime)}
           </span>
@@ -380,13 +403,13 @@ export function Timeline() {
 
           {/* Playhead */}
           <div
-            className="pointer-events-none absolute top-0 z-20 w-0.5 bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]"
+            className="pointer-events-none absolute top-0 z-20 w-0.5 bg-[var(--scrubber)] shadow-[0_0_6px_var(--scrubber)]"
             style={{
               left: `${currentTime * PIXEL_PER_SECOND * zoom}px`,
               height: `${rulerHeight + tracksHeight}px`,
             }}
           >
-            <div className="absolute -top-0 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 bg-red-500" />
+            <div className="absolute -top-0 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 bg-[var(--scrubber)]" />
           </div>
 
           {/* Remote cursor playheads */}

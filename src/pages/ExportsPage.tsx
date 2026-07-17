@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/useAuth"
+import { useToast } from "@/hooks/useToast"
 import { api, Export } from "@/lib/api"
 import { DashboardLayout } from "@/layouts/DashboardLayout"
 
@@ -101,6 +102,7 @@ export function ExportsPage() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const { accessToken } = useAuth()
+  const toast = useToast()
 
   const fetchExports = async () => {
     if (!accessToken) return
@@ -112,6 +114,7 @@ export function ExportsPage() {
       setExports(data)
     } catch (error) {
       console.error('Failed to fetch exports:', error)
+      toast.error('Failed to load exports')
     } finally {
       setLoading(false)
     }
@@ -142,9 +145,11 @@ export function ExportsPage() {
     
     try {
       await api.cancelExport(accessToken, id)
+      toast.success('Export cancelled')
       await fetchExports()
     } catch (error) {
       console.error('Failed to cancel export:', error)
+      toast.error('Failed to cancel export')
     }
   }
 

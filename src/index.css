@@ -32,6 +32,7 @@
   --accent-foreground: oklch(0.97 0.005 260);
 
   --destructive: oklch(0.62 0.2 25);
+  --scrubber: oklch(0.65 0.22 25); /* Standard video editor red for playhead/record indicators */
 
   /* Borders: subtle 1px that reads as structure, not decoration */
   --border: oklch(1 0 0 / 8%);
@@ -136,16 +137,16 @@
 .hero-shimmer-text {
   background: linear-gradient(
     90deg,
-    oklch(0.97 0.005 260) 0%,
-    oklch(0.85 0.14 285)  40%,
-    oklch(0.75 0.16 220)  60%,
-    oklch(0.97 0.005 260) 100%
+    #4a5568 0%,
+    #667eea 30%,
+    #764ba2 60%,
+    #f093fb 100%
   );
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: shimmer 4s linear infinite;
+  animation: shimmer 3s linear infinite;
 }
 .cursor-blink { animation: cursor-blink 1s step-end infinite; }
 

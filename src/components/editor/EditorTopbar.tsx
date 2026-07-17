@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { useEditorStore, type ConnectionStatus } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
+import { useToast } from "@/hooks/useToast"
 
 function Icon({ name, className = "size-4" }: { name: string; className?: string }) {
   const props = {
@@ -88,17 +89,22 @@ export function EditorTopbar() {
   const [savingTitle, setSavingTitle] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [copied, setCopied] = useState(false)
-  // Tick counter — updated on a timer so the "Saved Xs ago" label
-  // refreshes without needing the underlying save state to change.
   const [, setTick] = useState(0)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const shareRef = useRef<HTMLDivElement>(null)
+  const toast = useToast()
 
   // Re-render the "Saved Xs ago" label every 15s so it stays accurate
   useEffect(() => {
     const id = window.setInterval(() => setTick((n) => n + 1), 15000)
     return () => window.clearInterval(id)
   }, [])
+
+  // Toast on save error
+  useEffect(() => {
+    if (save.error) toast.error(`Save failed: ${save.error}`)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [save.error])
 
   useEffect(() => {
     if (editingTitle) titleInputRef.current?.focus()
@@ -135,9 +141,11 @@ export function EditorTopbar() {
     try {
       setSavingTitle(true)
       await renameProject(trimmed, accessToken)
+      toast.success('Project renamed')
       setEditingTitle(false)
     } catch (e) {
       console.error(e)
+      toast.error('Failed to rename project')
     } finally {
       setSavingTitle(false)
     }
@@ -151,16 +159,18 @@ export function EditorTopbar() {
     try {
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
+      toast.info('Link copied to clipboard')
       setTimeout(() => setCopied(false), 1500)
     } catch (e) {
       console.error("Failed to copy link", e)
+      toast.error('Failed to copy link')
     }
   }
 
   const savedAgoText = formatSavedAgo(save.lastSavedAt)
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 bg-card/60 px-3">
+    <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-card/80 px-3 backdrop-blur-sm">
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate("/projects")}

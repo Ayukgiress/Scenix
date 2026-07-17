@@ -30,10 +30,31 @@ function formatTime(seconds: number): string {
 
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
+function findActiveClip(clips: LocalClip[], t: number): LocalClip | null {
+  return clips.find(
+    (c) => c.type !== "audio" && c.type !== "text" && c.type !== "sticker" &&
+      t >= c.startTime - 0.05 && t < c.startTime + c.duration + 0.05
+  ) ?? null
+}
+
+function findActiveAudio(clips: LocalClip[], t: number): LocalClip | null {
+  return clips.find(
+    (c) => c.type === "audio" &&
+      t >= c.startTime - 0.05 && t < c.startTime + c.duration + 0.05
+  ) ?? null
+}
+
 export function PreviewPanel() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Refs for imperative media management — never trigger re-renders
+  const loadedVideoUrl = useRef<string | null>(null)
+  const loadedAudioUrl = useRef<string | null>(null)
+  const activeClipIdRef = useRef<string | null>(null)
+  const activeAudioIdRef = useRef<string | null>(null)
+  const mutedRef = useRef(false)
 
   const isPlaying = useEditorStore((s) => s.playback.isPlaying)
   const currentTime = useEditorStore((s) => s.playback.currentTime)
@@ -41,6 +62,7 @@ export function PreviewPanel() {
   const volume = useEditorStore((s) => s.playback.volume)
   const playbackRate = useEditorStore((s) => s.playback.playbackRate)
   const clips = useEditorStore((s) => s.clips)
+  const effects = useEditorStore((s) => s.effects)
   const togglePlay = useEditorStore((s) => s.togglePlay)
   const seek = useEditorStore((s) => s.seek)
   const setVolume = useEditorStore((s) => s.setVolume)
@@ -53,99 +75,202 @@ export function PreviewPanel() {
 
   const remoteCursors = useRealtimeCursors()
 
-  // Active video/image clip
-  const activeClip = useMemo<LocalClip | null>(() => {
-    return clips.find(
-      (c) => c.type !== "audio" && c.type !== "text" &&
-        currentTime >= c.startTime - 0.01 && currentTime < c.startTime + c.duration,
-    ) ?? null
-  }, [clips, currentTime])
+  // Keep mutedRef in sync so the RAF loop can read it without a closure
+  useEffect(() => { mutedRef.current = muted }, [muted])
 
-  // Active text clips
-  const activeTextClips = useMemo<LocalClip[]>(() => {
-    return clips.filter(
-      (c) => c.type === "text" &&
-        currentTime >= c.startTime - 0.01 && currentTime < c.startTime + c.duration,
-    )
-  }, [clips, currentTime])
+  // ── Imperative media sync helper ─────────────────────────────────────────
+  const syncMedia = (t: number, forceSeek = false) => {
+    const video = videoRef.current
+    const audio = audioRef.current
+    const storeClips = useEditorStore.getState().clips
+    const storeVolume = useEditorStore.getState().playback.volume
+    const isMuted = mutedRef.current
 
-  // Active audio clip
-  const activeAudioClip = useMemo<LocalClip | null>(() => {
-    return clips.find(
-      (c) => c.type === "audio" &&
-        currentTime >= c.startTime - 0.01 && currentTime < c.startTime + c.duration,
-    ) ?? null
-  }, [clips, currentTime])
+    // ── Video ──
+    const vc = findActiveClip(storeClips, t)
+    const videoUrl = vc?.type === "video" ? (vc.url ?? null) : null
 
-  // Sync video
+    if (video) {
+      if (videoUrl !== loadedVideoUrl.current) {
+        loadedVideoUrl.current = videoUrl
+        activeClipIdRef.current = vc?.id ?? null
+        if (!videoUrl) {
+          video.removeAttribute("src")
+          video.load()
+        } else {
+          // Capture t at load time so the canplaythrough closure uses the right offset
+          const loadedAtT = t
+          const loadedVc = vc!
+          video.src = videoUrl
+          video.preload = "auto"
+          video.addEventListener("canplaythrough", () => {
+            const clipTime = loadedAtT - loadedVc.startTime + (loadedVc.trimStart ?? 0)
+            try { video.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
+            video.volume = isMuted ? 0 : (loadedVc.volume ?? 1)
+            video.playbackRate = useEditorStore.getState().playback.playbackRate
+            if (useEditorStore.getState().playback.isPlaying) {
+              video.play().catch((e) => { if (e.name !== "AbortError") console.warn(e) })
+            }
+          }, { once: true })
+          video.load()
+        }
+      } else if (vc) {
+        const clipTime = t - vc.startTime + (vc.trimStart ?? 0)
+        // Only correct drift > 0.5 s during playback; always seek on forceSeek (scrub/pause)
+        if (forceSeek || Math.abs(video.currentTime - clipTime) > 0.5) {
+          try { video.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
+        }
+        video.volume = isMuted ? 0 : (vc.volume ?? 1)
+      }
+    }
+
+    // ── Audio ──
+    const ac = findActiveAudio(storeClips, t)
+    const audioUrl = ac?.url ?? null
+
+    if (audio) {
+      if (audioUrl !== loadedAudioUrl.current) {
+        loadedAudioUrl.current = audioUrl
+        activeAudioIdRef.current = ac?.id ?? null
+        if (!audioUrl) {
+          audio.removeAttribute("src")
+          audio.load()
+        } else {
+          const loadedAtT = t
+          const loadedAc = ac!
+          audio.src = audioUrl
+          audio.preload = "auto"
+          audio.addEventListener("canplaythrough", () => {
+            const clipTime = loadedAtT - loadedAc.startTime + (loadedAc.trimStart ?? 0)
+            try { audio.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
+            audio.volume = isMuted ? 0 : (loadedAc.volume ?? 1) * storeVolume
+            audio.playbackRate = useEditorStore.getState().playback.playbackRate
+            if (useEditorStore.getState().playback.isPlaying) {
+              audio.play().catch((e) => { if (e.name !== "AbortError") console.warn(e) })
+            }
+          }, { once: true })
+          audio.load()
+        }
+      } else if (ac) {
+        const clipTime = t - ac.startTime + (ac.trimStart ?? 0)
+        if (forceSeek || Math.abs(audio.currentTime - clipTime) > 0.5) {
+          try { audio.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
+        }
+        audio.volume = isMuted ? 0 : (ac.volume ?? 1) * storeVolume
+      }
+    }
+  }
+
+  // ── RAF playback loop ─────────────────────────────────────────────────────
   useEffect(() => {
     const video = videoRef.current
-    if (!video) return
-    if (!activeClip?.url || activeClip.type !== "video") {
-      if (video.src) { video.removeAttribute("src"); video.load() }
-      return
-    }
-    if (video.src !== activeClip.url) { video.src = activeClip.url; video.load() }
-    const clipTime = currentTime - activeClip.startTime + (activeClip.trimStart ?? 0)
-    if (Math.abs(video.currentTime - clipTime) > 0.15) {
-      try { video.currentTime = Math.max(0, clipTime) } catch { /* not ready */ }
-    }
-    video.volume = muted ? 0 : (activeClip.volume ?? 1)
-    video.style.filter = activeClip.metadata?.filter as string ?? ""
-  }, [activeClip, currentTime, muted])
-
-  // Sync audio
-  useEffect(() => {
     const audio = audioRef.current
-    if (!audio) return
-    if (!activeAudioClip?.url) {
-      if (audio.src) { audio.removeAttribute("src"); audio.load() }
-      return
-    }
-    if (audio.src !== activeAudioClip.url) { audio.src = activeAudioClip.url; audio.load() }
-    const clipTime = currentTime - activeAudioClip.startTime + (activeAudioClip.trimStart ?? 0)
-    if (Math.abs(audio.currentTime - clipTime) > 0.15) {
-      try { audio.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
-    }
-    audio.volume = muted ? 0 : (activeAudioClip.volume ?? 1) * volume
-  }, [activeAudioClip, currentTime, volume, muted])
 
-  // RAF playback loop
-  useEffect(() => {
     if (!isPlaying) {
-      videoRef.current?.pause()
-      audioRef.current?.pause()
+      video?.pause()
+      audio?.pause()
       return
     }
+
     let raf = 0
-    let last = performance.now()
+    let alive = true
+    // Use video.currentTime as the source of truth when available to avoid drift
+    let lastRafTime: number | null = null
+
     const step = (now: number) => {
-      const dt = (now - last) / 1000
-      last = now
+      if (!alive) return
+
       const store = useEditorStore.getState()
-      const dur = store.playback.duration
-      const next = store.playback.currentTime + dt * store.playback.playbackRate
-      if (dur > 0 && next >= dur) {
-        store.pause(); store.setCurrentTime(dur)
+      const video = videoRef.current
+
+      let next: number
+      if (video && loadedVideoUrl.current && !video.paused && video.readyState >= 2) {
+        // Derive timeline time from the video element — eliminates RAF drift
+        const vc = findActiveClip(store.clips, store.playback.currentTime)
+        if (vc) {
+          next = video.currentTime - (vc.trimStart ?? 0) + vc.startTime
+        } else {
+          const dt = lastRafTime !== null ? (now - lastRafTime) / 1000 : 0
+          next = store.playback.currentTime + dt * store.playback.playbackRate
+        }
       } else {
-        store.setCurrentTime(next)
+        const dt = lastRafTime !== null ? (now - lastRafTime) / 1000 : 0
+        next = store.playback.currentTime + dt * store.playback.playbackRate
       }
+      lastRafTime = now
+
+      if (store.playback.duration > 0 && next >= store.playback.duration) {
+        store.pause()
+        store.setCurrentTime(store.playback.duration)
+        syncMedia(store.playback.duration)
+        return
+      }
+
+      store.setCurrentTime(next)
+      syncMedia(next)
       raf = requestAnimationFrame(step)
     }
+
     raf = requestAnimationFrame(step)
-    videoRef.current?.play().catch(() => {})
-    audioRef.current?.play().catch(() => {})
-    return () => cancelAnimationFrame(raf)
+
+    return () => {
+      alive = false
+      cancelAnimationFrame(raf)
+      video?.pause()
+      audio?.pause()
+    }
+   
   }, [isPlaying])
 
+  // ── Sync on seek / scrub (when paused) ───────────────────────────────────
+  // Only fires when currentTime changes while NOT playing (seek, frame step)
+  const isPlayingRef = useRef(isPlaying)
+  useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
+
+  useEffect(() => {
+    if (!isPlayingRef.current) {
+      syncMedia(currentTime, true)
+    }
+   
+  }, [currentTime])
+
+  // ── Playback rate ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = playbackRate
     if (audioRef.current) audioRef.current.playbackRate = playbackRate
   }, [playbackRate])
 
+  // ── Volume / mute ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (audioRef.current && !activeAudioClip) audioRef.current.volume = muted ? 0 : volume
-  }, [volume, activeAudioClip, muted])
+    const store = useEditorStore.getState()
+    const t = store.playback.currentTime
+    const vc = findActiveClip(store.clips, t)
+    const ac = findActiveAudio(store.clips, t)
+    if (videoRef.current) videoRef.current.volume = muted ? 0 : (vc?.volume ?? 1)
+    if (audioRef.current) audioRef.current.volume = muted ? 0 : (ac?.volume ?? 1) * volume
+  }, [muted, volume])
+
+  // ── Derived render-only values (stable, don't drive effects) ─────────────
+  const activeClip = useMemo(
+    () => findActiveClip(clips, currentTime),
+    // Only recompute when clips array changes or we cross a clip boundary
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clips, Math.floor(currentTime * 4)]  // 4 = quarter-second granularity
+  )
+
+  const activeTextClips = useMemo<LocalClip[]>(
+    () => clips.filter(
+      (c) => c.type === "text" &&
+        currentTime >= c.startTime - 0.05 && currentTime < c.startTime + c.duration + 0.05
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clips, Math.floor(currentTime * 4)]
+  )
+
+  const finalFilter = useMemo(() => {
+    const clipFilter = activeClip?.metadata?.filter as string ?? ""
+    return [...effects, clipFilter].filter(Boolean).join(" ")
+  }, [effects, activeClip])
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -169,18 +294,20 @@ export function PreviewPanel() {
 
   return (
     <section
-      className="flex flex-1 flex-col bg-black/40 p-4"
+      className="flex h-full flex-col items-center justify-center bg-[#0a0a0c] p-3"
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
       <div
         ref={containerRef}
-        className="relative aspect-video w-full flex-1 overflow-hidden rounded-md border border-border/40 bg-black"
+        className="relative w-full max-w-full overflow-hidden rounded-lg border border-white/5 bg-black shadow-2xl"
+        style={{ aspectRatio: "16/9", maxHeight: "100%" }}
       >
         <video
           ref={videoRef}
           className="absolute inset-0 h-full w-full object-contain"
           playsInline
+          style={{ filter: finalFilter }}
         />
         <audio ref={audioRef} className="hidden" />
 
@@ -245,9 +372,8 @@ export function PreviewPanel() {
 
         {/* Controls bar */}
         <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity ${showControls ? "opacity-100" : "opacity-0"}`}>
-          {/* Scrubber with remote cursors */}
+          {/* Scrubber */}
           <div className="group relative mb-3 h-1.5 w-full cursor-pointer rounded-full bg-white/20" onClick={handleSeek}>
-            {/* Progress */}
             <div
               className="relative h-full rounded-full bg-primary"
               style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
@@ -255,7 +381,6 @@ export function PreviewPanel() {
               <div className="absolute right-0 top-1/2 size-3 -translate-y-1/2 translate-x-1/2 rounded-full bg-primary opacity-0 transition-opacity group-hover:opacity-100" />
             </div>
 
-            {/* Remote cursor markers */}
             {Array.from(remoteCursors.values()).map((cursor) => (
               <div
                 key={cursor.userId}
@@ -275,34 +400,24 @@ export function PreviewPanel() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* Skip back 5s */}
             <button onClick={() => seek(Math.max(0, currentTime - 5))} className="grid size-7 place-items-center rounded text-white hover:bg-white/10" title="Back 5s">
               <Icon name="skip-back" className="size-3.5" />
             </button>
-
-            {/* Frame back */}
-            <button onClick={() => stepFrame(-1)} className="grid size-7 place-items-center rounded text-white hover:bg-white/10" title="Previous frame (,)">
+            <button onClick={() => stepFrame(-1)} className="grid size-7 place-items-center rounded text-white hover:bg-white/10" title="Previous frame">
               <Icon name="frame-back" className="size-3.5" />
             </button>
-
-            {/* Play/Pause */}
             <button onClick={togglePlay} className="grid size-9 place-items-center rounded-full bg-primary text-primary-foreground hover:scale-110 transition-transform" title={isPlaying ? "Pause" : "Play"}>
               <Icon name={isPlaying ? "pause" : "play"} className="size-4" />
             </button>
-
-            {/* Frame forward */}
-            <button onClick={() => stepFrame(1)} className="grid size-7 place-items-center rounded text-white hover:bg-white/10" title="Next frame (.)">
+            <button onClick={() => stepFrame(1)} className="grid size-7 place-items-center rounded text-white hover:bg-white/10" title="Next frame">
               <Icon name="frame-forward" className="size-3.5" />
             </button>
-
-            {/* Skip forward 5s */}
             <button onClick={() => seek(Math.min(duration, currentTime + 5))} className="grid size-7 place-items-center rounded text-white hover:bg-white/10" title="Forward 5s">
               <Icon name="skip-forward" className="size-3.5" />
             </button>
 
-            {/* Volume + mute */}
             <div className="ml-1 flex items-center gap-1.5">
-              <button onClick={() => setMuted((m) => !m)} className="grid size-6 place-items-center rounded text-white hover:bg-white/10" title={muted ? "Unmute (M)" : "Mute (M)"}>
+              <button onClick={() => setMuted((m) => !m)} className="grid size-6 place-items-center rounded text-white hover:bg-white/10" title={muted ? "Unmute" : "Mute"}>
                 <Icon name={muted ? "mute" : "volume"} className="size-3.5" />
               </button>
               <input
@@ -312,12 +427,10 @@ export function PreviewPanel() {
               />
             </div>
 
-            {/* Playback rate */}
             <div className="relative ml-auto">
               <button
                 onClick={() => setShowRates((v) => !v)}
                 className="rounded px-2 py-0.5 text-[11px] font-medium text-white hover:bg-white/10"
-                title="Playback speed"
               >
                 {playbackRate}x
               </button>

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { HeroBg } from "@/components/landing/HeroBg"
 import { useAuth } from "@/hooks/useAuth"
+import { useToast } from "@/hooks/useToast"
 import { api } from "@/lib/api"
 
 function strengthLabel(score: number) {
@@ -34,6 +35,7 @@ export function SignupPage() {
   const [loading, setLoading] = useState(false)
   const { register } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
   const strength = usePasswordStrength(password)
   const { label, color } = strengthLabel(strength)
 
@@ -44,9 +46,12 @@ export function SignupPage() {
     try {
       const name = `${firstName} ${lastName}`.trim()
       await register(name, email, password)
+      toast.success("Account created! Please verify your email.")
       navigate("/auth/verify-pending", { state: { email } })
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed")
+      const msg = err instanceof Error ? err.message : "Registration failed"
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }

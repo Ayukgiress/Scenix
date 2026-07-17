@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client"
 import { useEditorStore, type LocalClip, type LocalMedia } from "@/store/editorStore"
-import { clipFromServer, type ServerClip, type Media } from "@/lib/api"
+import { clipFromServer, type ServerClip, type Media, type Project } from "@/lib/api"
 
 // ─── Presence ────────────────────────────────────────────────────────────────
 export interface RemoteCursor {
@@ -105,6 +105,42 @@ class RealtimeService {
       if (this.currentProjectId) this.emitJoin(this.currentProjectId)
     })
 
+    // ─── Dashboard project events ────────────────────────────────────────
+
+    this.socket.on("project:created", (project: Project) => {
+      // Lazily import to avoid circular deps at module load time
+      import("@/store/dashboardStore").then(({ useDashboardStore }) => {
+        const { projects, stats } = useDashboardStore.getState()
+        if (projects.some((p) => p.id === project.id)) return
+        const newProject = serverProjectToDashboard(project, projects.length)
+        useDashboardStore.setState((s) => ({
+          projects: [newProject, ...s.projects],
+          stats: { ...s.stats, totalProjects: s.stats.totalProjects + 1 },
+        }))
+      })
+    })
+
+    this.socket.on("project:status", (data: { id: string; status: string; progress?: number }) => {
+      import("@/store/dashboardStore").then(({ useDashboardStore }) => {
+        useDashboardStore.getState().updateProjectStatus(
+          data.id,
+          data.status as Parameters<ReturnType<typeof useDashboardStore.getState>["updateProjectStatus"]>[1],
+        )
+        if (data.progress !== undefined) {
+          useDashboardStore.getState().updateProjectProgress(data.id, data.progress)
+        }
+      })
+    })
+
+    this.socket.on("project:deleted", (data: { id: string }) => {
+      import("@/store/dashboardStore").then(({ useDashboardStore }) => {
+        useDashboardStore.setState((s) => ({
+          projects: s.projects.filter((p) => p.id !== data.id),
+          stats: { ...s.stats, totalProjects: Math.max(0, s.stats.totalProjects - 1) },
+        }))
+      })
+    })
+
     // ─── Project events ─────────────────────────────────────────────────
 
     this.socket.on("project:updated", (project: { id: string; title: string; status: string }) => {
@@ -112,11 +148,28 @@ class RealtimeService {
       if (store.projectId === project.id) {
         store.setProject(project as Parameters<typeof store.setProject>[0])
       }
+      // Also update dashboard card title/status
+      import("@/store/dashboardStore").then(({ useDashboardStore }) => {
+        useDashboardStore.setState((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === project.id
+              ? { ...p, title: project.title, status: project.status }
+              : p,
+          ),
+        }))
+      })
     })
 
     this.socket.on("project:renamed", (data: { id: string; title: string }) => {
       const store = useEditorStore.getState()
       if (store.projectId === data.id) store.setProjectTitle(data.title)
+      import("@/store/dashboardStore").then(({ useDashboardStore }) => {
+        useDashboardStore.setState((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === data.id ? { ...p, title: data.title } : p,
+          ),
+        }))
+      })
     })
 
     // ─── Clip events ─────────────────────────────────────────────────────
@@ -173,6 +226,12 @@ class RealtimeService {
       if (existing) store.removeMediaAssetLocal(existing.id)
     })
 
+    this.socket.on("effects:updated", (effects: string[]) => {
+      const store = useEditorStore.getState()
+      store.setEffects(effects)
+    })
+
+
     // ─── Presence / cursor events ─────────────────────────────────────────
 
     this.socket.on("cursor:update", (cursor: RemoteCursor) => {
@@ -225,6 +284,14 @@ class RealtimeService {
 
   private emitJoin(projectId: string) {
     this.socket?.emit("join-project", projectId)
+  }
+
+  updateEffects(effects: string[]) {
+    if (!this.socket?.connected || !this.currentProjectId) return
+    this.socket.emit("effects:update", {
+      projectId: this.currentProjectId,
+      effects,
+    })
   }
 
   // ─── Cursor presence ───────────────────────────────────────────────────
@@ -301,6 +368,31 @@ class RealtimeService {
       syncing: false,
       dirty: false,
     }
+  }
+}
+
+// ─── Dashboard helper ────────────────────────────────────────────────────────
+
+function timeAgoMs(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime()
+  const h = Math.floor(diffMs / 3_600_000)
+  const d = Math.floor(h / 24)
+  if (h < 1) return "Just now"
+  if (h < 24) return `${h}h ago`
+  if (d === 1) return "Yesterday"
+  return `${d} days ago`
+}
+
+function serverProjectToDashboard(p: Project, index: number) {
+  return {
+    id: p.id,
+    title: p.title,
+    duration: "0:00",
+    size: "0 MB",
+    status: p.status,
+    hue: 60 + (index * 70) % 300,
+    updatedAt: timeAgoMs(p.updatedAt),
+    thumb: [60 + (index * 70) % 300, 40 + (index * 50) % 280] as [number, number],
   }
 }
 

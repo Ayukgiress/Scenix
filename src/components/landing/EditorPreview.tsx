@@ -135,15 +135,33 @@ function ScrollColumn({ clips, duration, delay = 0 }: { clips: typeof CLIPS; dur
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function EditorPreview() {
-  const col1 = CLIPS.slice(0, 4)
-  const col2 = CLIPS.slice(4, 8)
-
   return (
-    <div className="relative h-[580px] overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-br from-black/20 via-black/10 to-black/20 p-4 backdrop-blur-xl">
-      <div className="grid h-full grid-cols-2 gap-3">
-        <ScrollColumn clips={col1} duration={32} />
-        <ScrollColumn clips={col2} duration={26} delay={-8} />
+    <div className="relative h-[580px] overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-br from-black/20 via-black/10 to-black/20 backdrop-blur-xl">
+      {/* Editor window title bar */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-black/30">
+        <div className="flex gap-1.5">
+          <span className="size-3 rounded-full bg-red-500/80"></span>
+          <span className="size-3 rounded-full bg-yellow-500/80"></span>
+          <span className="size-3 rounded-full bg-green-500/80"></span>
+        </div>
+        <span className="ml-4 text-xs text-white/60">Scenix Video Editor - My Project.scx</span>
       </div>
+      
+      {/* Editor interface screenshot */}
+      <div className="relative h-[calc(100%-44px)] w-full">
+        <img 
+          src="/src/assets/hero.png" 
+          alt="Scenix Video Editor interface showing timeline, preview monitor, and editing panels"
+          className="w-full h-full object-cover"
+        />
+        {/* Overlay highlight for key editor features */}
+        <div className="absolute bottom-4 left-4 flex gap-2">
+          <span className="px-2 py-1 bg-black/70 backdrop-blur-sm rounded text-xs text-white/90">Multi-track Timeline</span>
+          <span className="px-2 py-1 bg-black/70 backdrop-blur-sm rounded text-xs text-white/90">Preview Monitor</span>
+          <span className="px-2 py-1 bg-black/70 backdrop-blur-sm rounded text-xs text-white/90">Media Library</span>
+        </div>
+      </div>
+      
       <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/[0.05]" />
     </div>
   )

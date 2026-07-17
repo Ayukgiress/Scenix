@@ -7,8 +7,8 @@ const NAV = [
   { label: "Projects", icon: "grid", path: "/projects" },
   { label: "Media", icon: "file", path: "/media" },
   { label: "Exports", icon: "export", path: "/exports" },
-  { label: "Team", icon: "team", path: "/dashboard" },
-  { label: "Settings", icon: "settings", path: "/dashboard" },
+  { label: "Team", icon: "team", path: "/team" },
+  { label: "Settings", icon: "settings", path: "/settings" },
 ]
 
 function Icon({ name, className = "size-4" }: { name: string; className?: string }) {

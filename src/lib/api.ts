@@ -1,7 +1,7 @@
 // Vite exposes variables prefixed with VITE_ on `import.meta.env`.
 const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ||
-  "http://localhost:3000";
+  "http://localhost:3000/v1";
 
 function getAuthHeaders(token?: string) {
   return {
@@ -190,13 +190,13 @@ export function clipToServer(input: {
   trimStart?: number;
   trimEnd?: number;
 }): {
-  mediaAssetId: string | null;
+  mediaAssetId?: string;
   trackIndex: number;
   startTimeMs: number;
   durationMs: number;
 } {
   return {
-    mediaAssetId: input.mediaId ? input.mediaId : null,
+    ...(input.mediaId ? { mediaAssetId: input.mediaId } : {}),
     trackIndex: input.track,
     startTimeMs: Math.max(0, Math.round(input.startTime * 1000)),
     durationMs: Math.max(1, Math.round(input.duration * 1000)),
@@ -587,7 +587,8 @@ export const api = {
       metadata?: Record<string, unknown>;
     },
   ): Promise<ServerClip> {
-    const payload = clipToServer(data);
+    const payload: Record<string, unknown> = { ...clipToServer(data) };
+    if (data.metadata) payload.metadata = data.metadata;
     const res = await fetch(`${API_URL}/projects/${projectId}/clips`, {
       method: "POST",
       headers: getAuthHeaders(token),

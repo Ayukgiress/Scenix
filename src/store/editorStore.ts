@@ -1,3 +1,4 @@
+import { realtimeService } from "@/services/realtimeService";
 import { create } from "zustand";
 import type { TimelineClip, PlaybackState, MediaAsset } from "@/types/editor";
 import {
@@ -24,6 +25,7 @@ export interface LocalClip extends Omit<TimelineClip, "file"> {
   height?: number | null;
   // Stores text JSON payload or any clip-level metadata
   metadata?: Record<string, unknown>;
+  transforms?: { x: number; y: number; scale: number; rotation: number; opacity: number };
 }
 
 export interface LocalMedia extends Omit<MediaAsset, "file"> {
@@ -51,6 +53,7 @@ interface EditorState {
 
   clips: LocalClip[];
   mediaAssets: LocalMedia[];
+  effects: string[];
 
   playback: PlaybackState;
   selectedClipId: string | null;
@@ -94,6 +97,9 @@ interface EditorState {
   addMediaAssetLocal: (asset: LocalMedia) => void;
   updateMediaAssetLocal: (id: string, updates: Partial<LocalMedia>) => void;
   removeMediaAssetLocal: (id: string) => void;
+
+  // ─── Effects ───────────────────────────────────────────────────────────
+  setEffects: (effects: string[]) => void;
 
   // ─── Timeline ──────────────────────────────────────────────────────────
   setZoom: (zoom: number) => void;
@@ -170,6 +176,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   clips: [],
   mediaAssets: [],
+  effects: [],
   playback: { ...initialPlayback },
   selectedClipId: null,
   zoom: 1,
@@ -327,8 +334,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!projectId) return null;
     set({ save: { ...get().save, saving: true, error: null } });
     try {
-      // Build metadata for text clips and volume
-      const metadata: Record<string, unknown> = {};
+      // Build metadata for text/sticker clips and volume
+      const metadata: Record<string, unknown> = { ...(clip.metadata ?? {}) };
       if (clip.type === "text" && clip.url) {
         try { Object.assign(metadata, JSON.parse(clip.url)) } catch { /* ignore */ }
       }
@@ -383,7 +390,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const merged = { ...clip, ...updates };
 
       // Build metadata from merged clip state
-      const metadata: Record<string, unknown> = {};
+      const metadata: Record<string, unknown> = { ...(merged.metadata ?? {}) };
       if (merged.type === "text" && merged.url) {
         try { Object.assign(metadata, JSON.parse(merged.url)) } catch { /* ignore */ }
       }
@@ -450,6 +457,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   removeMediaAssetLocal: (id) =>
     set((s) => ({ mediaAssets: s.mediaAssets.filter((a) => a.id !== id) })),
 
+  setEffects: (effects) => {
+    set({ effects });
+    realtimeService.updateEffects(effects);
+  },
+
   setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(4, zoom)) }),
   setConnectionStatus: (status) => set({ connectionStatus: status }),
   setSaveState: (state) => set({ save: { ...get().save, ...state } }),
@@ -458,7 +470,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       project: null, projectId: null, projectTitle: "Untitled project",
       projectStatus: "draft", loadingProject: false, projectError: null,
-      clips: [], mediaAssets: [], playback: { ...initialPlayback },
+      clips: [], mediaAssets: [], effects: [], playback: { ...initialPlayback },
       selectedClipId: null, zoom: 1,
       save: { lastSavedAt: null, saving: false, error: null },
       connectionStatus: "disconnected",

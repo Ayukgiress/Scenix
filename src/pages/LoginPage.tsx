@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { HeroBg } from "@/components/landing/HeroBg"
 import { useAuth } from "@/hooks/useAuth"
+import { useToast } from "@/hooks/useToast"
 import { api } from "@/lib/api"
 
 export function LoginPage() {
@@ -12,6 +13,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,9 +21,12 @@ export function LoginPage() {
     setLoading(true)
     try {
       await login(email, password)
+      toast.success("Welcome back!")
       navigate("/dashboard")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed")
+      const msg = err instanceof Error ? err.message : "Login failed"
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }

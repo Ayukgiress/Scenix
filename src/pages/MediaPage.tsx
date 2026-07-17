@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/useAuth"
+import { useToast } from "@/hooks/useToast"
 import { api, Media } from "@/lib/api"
 import { DashboardLayout } from "@/layouts/DashboardLayout"
 
@@ -71,6 +72,7 @@ export function MediaPage() {
   const [search, setSearch] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const { accessToken } = useAuth()
+  const toast = useToast()
 
   const fetchMedia = async () => {
     if (!accessToken) return
@@ -83,6 +85,7 @@ export function MediaPage() {
       setMedia(data)
     } catch (error) {
       console.error('Failed to fetch media:', error)
+      toast.error('Failed to load media')
     } finally {
       setLoading(false)
     }
@@ -114,9 +117,11 @@ export function MediaPage() {
     
     try {
       await api.deleteMedia(accessToken, id)
+      toast.success('File deleted')
       await fetchMedia()
     } catch (error) {
       console.error('Failed to delete media:', error)
+      toast.error('Failed to delete file')
     }
   }
 

@@ -360,42 +360,46 @@ export function StatsSection() {
 
 export function ComparisonSection() {
   const features = [
-    { name: "No installation required", scenix: true, traditional: false },
-    { name: "Works on any device", scenix: true, traditional: false },
-    { name: "Cloud rendering", scenix: true, traditional: false },
-    { name: "Real-time collaboration", scenix: true, traditional: false },
-    { name: "Auto-save & version history", scenix: true, traditional: false },
-    { name: "4K 60fps export", scenix: true, traditional: true },
-    { name: "Multi-track timeline", scenix: true, traditional: true },
-    { name: "AI-powered tools", scenix: true, traditional: false },
+    { name: "No installation required", scenix: true, premiere: false, finalcut: false, capcut: true },
+    { name: "Works on any device (Mac/Windows/Linux)", scenix: true, premiere: false, finalcut: false, capcut: true },
+    { name: "Cloud rendering (no local GPU needed)", scenix: true, premiere: false, finalcut: false, capcut: false },
+    { name: "Real-time team collaboration", scenix: true, premiere: false, finalcut: false, capcut: false },
+    { name: "Auto-save & unlimited version history", scenix: true, premiere: false, finalcut: false, capcut: false },
+    { name: "Professional multi-track timeline", scenix: true, premiere: true, finalcut: true, capcut: false },
+    { name: "Frame-accurate editing precision", scenix: true, premiere: true, finalcut: true, capcut: false },
+    { name: "AI-powered editing tools", scenix: true, premiere: false, finalcut: false, capcut: true },
+    { name: "4K 60fps exports included", scenix: true, premiere: true, finalcut: true, capcut: false },
   ]
 
   return (
     <section className="border-t border-border py-24">
-      <div className="mx-auto w-full max-w-4xl px-5">
+      <div className="mx-auto w-full max-w-6xl px-5">
         <div className="text-center">
-          <p className="text-[12px] font-medium uppercase tracking-wider text-muted-foreground">Comparison</p>
+          <p className="text-[12px] font-medium uppercase tracking-wider text-muted-foreground">How we compare</p>
           <h2 className="mt-2 text-[28px] font-semibold tracking-tight text-foreground md:text-[36px]">
-            Why choose Scenix?
+            Scenix vs. Desktop Editors
           </h2>
           <p className="mt-3 text-[14px] text-muted-foreground">
-            Modern workflow meets professional power.
+            Get the professional features of Premiere Pro/Final Cut Pro with the flexibility of cloud-based editing.
           </p>
         </div>
         <div className="mt-12 overflow-hidden rounded-xl border border-border bg-card">
-          <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border bg-muted/40 px-6 py-4 text-[13px] font-medium">
+          <div className="grid grid-cols-[2fr_auto_auto_auto_auto] gap-4 border-b border-border bg-muted/40 px-6 py-4 text-[13px] font-medium">
             <div className="text-foreground">Feature</div>
             <div className="text-center text-foreground">Scenix</div>
-            <div className="text-center text-muted-foreground">Traditional</div>
+            <div className="text-center text-muted-foreground">Premiere Pro</div>
+            <div className="text-center text-muted-foreground">Final Cut Pro</div>
+            <div className="text-center text-muted-foreground">CapCut</div>
           </div>
           {features.map((feature, i) => (
             <div
               key={feature.name}
-              className={`grid grid-cols-[1fr_auto_auto] gap-4 px-6 py-4 text-[13px] ${
+              className={`grid grid-cols-[2fr_auto_auto_auto_auto] gap-4 px-6 py-4 text-[13px] ${
                 i !== features.length - 1 ? "border-b border-border" : ""
               }`}
             >
               <div className="text-foreground/90">{feature.name}</div>
+              {/* Scenix */}
               <div className="flex justify-center">
                 {feature.scenix ? (
                   <svg viewBox="0 0 24 24" className="size-4 text-primary" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -408,8 +412,35 @@ export function ComparisonSection() {
                   </svg>
                 )}
               </div>
+              {/* Premiere Pro */}
               <div className="flex justify-center">
-                {feature.traditional ? (
+                {feature.premiere ? (
+                  <svg viewBox="0 0 24 24" className="size-4 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="size-4 text-muted-foreground/40" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                )}
+              </div>
+              {/* Final Cut Pro */}
+              <div className="flex justify-center">
+                {feature.finalcut ? (
+                  <svg viewBox="0 0 24 24" className="size-4 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="size-4 text-muted-foreground/40" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                )}
+              </div>
+              {/* CapCut */}
+              <div className="flex justify-center">
+                {feature.capcut ? (
                   <svg viewBox="0 0 24 24" className="size-4 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>

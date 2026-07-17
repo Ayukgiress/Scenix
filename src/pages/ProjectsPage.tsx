@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "@/hooks/useAuth"
+import { useToast } from "@/hooks/useToast"
 import { api, Project as APIProject } from "@/lib/api"
 import { DashboardLayout } from "@/layouts/DashboardLayout"
 
@@ -140,6 +141,7 @@ export function ProjectsPage() {
   const [createTitle, setCreateTitle] = useState("")
   const [creating, setCreating] = useState(false)
   const { accessToken } = useAuth()
+  const toast = useToast()
 
   const fetchProjects = async () => {
     if (!accessToken) return
@@ -161,6 +163,7 @@ export function ProjectsPage() {
       setProjects(projects)
     } catch (error) {
       console.error('Failed to fetch projects:', error)
+      toast.error('Failed to load projects')
     } finally {
       setLoading(false)
     }
@@ -205,11 +208,13 @@ export function ProjectsPage() {
     try {
       setCreating(true)
       await api.createProject(accessToken, { title: createTitle.trim() })
+      toast.success('Project created')
       await fetchProjects()
       setShowCreateDialog(false)
       setCreateTitle("")
     } catch (error) {
       console.error('Failed to create project:', error)
+      toast.error('Failed to create project')
     } finally {
       setCreating(false)
     }
@@ -225,11 +230,13 @@ export function ProjectsPage() {
     
     try {
       await api.updateProject(accessToken, editingProject.id, { title: newTitle.trim() })
+      toast.success('Project renamed')
       await fetchProjects()
       setEditingProject(null)
       setNewTitle("")
     } catch (error) {
       console.error('Failed to update project:', error)
+      toast.error('Failed to rename project')
     }
   }
 
@@ -239,9 +246,11 @@ export function ProjectsPage() {
     
     try {
       await api.deleteProject(accessToken, id)
+      toast.success('Project deleted')
       await fetchProjects()
     } catch (error) {
       console.error('Failed to delete project:', error)
+      toast.error('Failed to delete project')
     }
   }
 

@@ -1,6 +1,6 @@
 export interface TimelineClip {
   id: string
-  type: "video" | "audio" | "image" | "text"
+  type: "video" | "audio" | "image" | "text" | "sticker"
   file?: File
   url?: string
   startTime: number
