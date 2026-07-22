@@ -30,9 +30,11 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 function TimecodeField({
   value,
   onChange,
+  onFocus,
 }: {
   value: number
   onChange: (v: number) => void
+  onFocus?: () => void
 }) {
   const [local, setLocal] = useState(formatTimeDetailed(value))
   const [isEditing, setIsEditing] = useState(false)
@@ -53,7 +55,7 @@ function TimecodeField({
     <input
       type="text"
       value={local}
-      onFocus={() => setIsEditing(true)}
+      onFocus={() => { setIsEditing(true); onFocus?.() }}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={() => {
         setIsEditing(false)
@@ -70,10 +72,12 @@ function NumberField({
   value,
   onChange,
   placeholder,
+  onFocus,
 }: {
   value: number | null | undefined
   onChange: (v: number) => void
   placeholder?: string
+  onFocus?: () => void
 }) {
   const [local, setLocal] = useState(String(value ?? ""))
   const [editing, setEditing] = useState(false)
@@ -83,7 +87,7 @@ function NumberField({
       type="number"
       value={local}
       placeholder={placeholder}
-      onFocus={() => setEditing(true)}
+      onFocus={() => { setEditing(true); onFocus?.() }}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={() => {
         setEditing(false)
@@ -104,6 +108,7 @@ function SliderRow({
   onChange,
   display,
   onDoubleClick,
+  onFocus,
 }: {
   label: string
   value: number
@@ -113,6 +118,7 @@ function SliderRow({
   onChange: (v: number) => void
   display?: string
   onDoubleClick?: () => void
+  onFocus?: () => void
 }) {
   return (
     <div>
@@ -128,6 +134,7 @@ function SliderRow({
         max={max}
         step={step}
         value={value}
+        onFocus={onFocus}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         onDoubleClick={onDoubleClick}
         className="w-full accent-primary"
@@ -217,6 +224,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
   const splitClip       = useEditorStore((s) => s.splitClip)
   const selectClip      = useEditorStore((s) => s.selectClip)
   const seek            = useEditorStore((s) => s.seek)
+  const pushHistory     = useEditorStore((s) => s.pushHistory)
   const currentTime     = useEditorStore((s) => s.playback.currentTime)
   const { accessToken } = useAuth()
 
@@ -244,6 +252,11 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
     updateClipLocal(selectedClip.id, updates)
     queueSync(updates)
   }
+
+  // Push a history snapshot before a committed property edit.
+  // Called from onFocus of interactive fields so we capture state
+  // before the user starts changing a value.
+  const commitHistory = () => pushHistory()
 
   const handleDelete = async () => {
     if (accessToken) {
@@ -355,19 +368,19 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <FieldLabel>Start</FieldLabel>
-                <TimecodeField value={selectedClip.startTime} onChange={(v) => handleChange({ startTime: v })} />
+                <TimecodeField value={selectedClip.startTime} onFocus={commitHistory} onChange={(v) => handleChange({ startTime: v })} />
               </div>
               <div>
                 <FieldLabel>Duration</FieldLabel>
-                <TimecodeField value={selectedClip.duration} onChange={(v) => handleChange({ duration: Math.max(0.1, v) })} />
+                <TimecodeField value={selectedClip.duration} onFocus={commitHistory} onChange={(v) => handleChange({ duration: Math.max(0.1, v) })} />
               </div>
               <div>
                 <FieldLabel>Trim Start</FieldLabel>
-                <TimecodeField value={selectedClip.trimStart ?? 0} onChange={(v) => handleChange({ trimStart: v })} />
+                <TimecodeField value={selectedClip.trimStart ?? 0} onFocus={commitHistory} onChange={(v) => handleChange({ trimStart: v })} />
               </div>
               <div>
                 <FieldLabel>Trim End</FieldLabel>
-                <TimecodeField value={selectedClip.trimEnd ?? selectedClip.duration} onChange={(v) => handleChange({ trimEnd: v })} />
+                <TimecodeField value={selectedClip.trimEnd ?? selectedClip.duration} onFocus={commitHistory} onChange={(v) => handleChange({ trimEnd: v })} />
               </div>
             </div>
           </Section>
@@ -378,6 +391,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 label="Volume"
                 value={selectedClip.volume ?? 1}
                 min={0} max={1} step={0.01}
+                onFocus={commitHistory}
                 onChange={(v) => handleChange({ volume: v })}
                 display={`${Math.round((selectedClip.volume ?? 1) * 100)}%`}
                 onDoubleClick={() => handleChange({ volume: 1 })}
@@ -391,6 +405,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 label="Opacity"
                 value={selectedClip.opacity ?? 1}
                 min={0} max={1} step={0.01}
+                onFocus={commitHistory}
                 onChange={(v) => handleChange({ opacity: v })}
                 display={`${Math.round((selectedClip.opacity ?? 1) * 100)}%`}
                 onDoubleClick={() => handleChange({ opacity: 1 })}
@@ -398,19 +413,19 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <FieldLabel>X (%)</FieldLabel>
-                  <NumberField value={selectedClip.x} onChange={(v) => handleChange({ x: v })} placeholder="0" />
+                  <NumberField value={selectedClip.x} onFocus={commitHistory} onChange={(v) => handleChange({ x: v })} placeholder="0" />
                 </div>
                 <div>
                   <FieldLabel>Y (%)</FieldLabel>
-                  <NumberField value={selectedClip.y} onChange={(v) => handleChange({ y: v })} placeholder="0" />
+                  <NumberField value={selectedClip.y} onFocus={commitHistory} onChange={(v) => handleChange({ y: v })} placeholder="0" />
                 </div>
                 <div>
                   <FieldLabel>Width (px)</FieldLabel>
-                  <NumberField value={selectedClip.width ?? undefined} onChange={(v) => handleChange({ width: v })} placeholder="auto" />
+                  <NumberField value={selectedClip.width ?? undefined} onFocus={commitHistory} onChange={(v) => handleChange({ width: v })} placeholder="auto" />
                 </div>
                 <div>
                   <FieldLabel>Height (px)</FieldLabel>
-                  <NumberField value={selectedClip.height ?? undefined} onChange={(v) => handleChange({ height: v })} placeholder="auto" />
+                  <NumberField value={selectedClip.height ?? undefined} onFocus={commitHistory} onChange={(v) => handleChange({ height: v })} placeholder="auto" />
                 </div>
               </div>
             </Section>
@@ -423,19 +438,21 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 <textarea
                   rows={2}
                   value={textData.text}
+                  onFocus={commitHistory}
                   onChange={(e) => updateText({ text: e.target.value })}
                   className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </div>
               <div>
                 <FieldLabel>Font size</FieldLabel>
-                <NumberField value={textData.fontSize} onChange={(v) => updateText({ fontSize: v })} />
+                <NumberField value={textData.fontSize} onFocus={commitHistory} onChange={(v) => updateText({ fontSize: v })} />
               </div>
               <div>
                 <FieldLabel>Color</FieldLabel>
                 <input
                   type="color"
                   value={textData.color}
+                  onFocus={commitHistory}
                   onChange={(e) => updateText({ color: e.target.value })}
                   className="h-8 w-full cursor-pointer rounded-md border border-border bg-background"
                 />
@@ -444,7 +461,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 <FieldLabel>Weight</FieldLabel>
                 <select
                   value={textData.fontWeight}
-                  onChange={(e) => updateText({ fontWeight: e.target.value })}
+                  onChange={(e) => { commitHistory(); updateText({ fontWeight: e.target.value }) }}
                   className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
                 >
                   <option value="normal">Normal</option>
@@ -456,11 +473,11 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <FieldLabel>X (%)</FieldLabel>
-                  <NumberField value={textData.x} onChange={(v) => updateText({ x: v })} />
+                  <NumberField value={textData.x} onFocus={commitHistory} onChange={(v) => updateText({ x: v })} />
                 </div>
                 <div>
                   <FieldLabel>Y (%)</FieldLabel>
-                  <NumberField value={textData.y} onChange={(v) => updateText({ y: v })} />
+                  <NumberField value={textData.y} onFocus={commitHistory} onChange={(v) => updateText({ y: v })} />
                 </div>
               </div>
             </Section>
@@ -473,6 +490,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 label="Playback Speed"
                 value={speed}
                 min={0.1} max={4} step={0.05}
+                onFocus={commitHistory}
                 onChange={updateSpeed}
                 display={`${speed.toFixed(2)}x`}
                 onDoubleClick={() => updateSpeed(1)}
@@ -498,7 +516,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 <FieldLabel>Type</FieldLabel>
                 <select
                   value={transition.type}
-                  onChange={(e) => updateTransition({ type: e.target.value as TransitionSettings["type"] })}
+                  onChange={(e) => { commitHistory(); updateTransition({ type: e.target.value as TransitionSettings["type"] }) }}
                   className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
                 >
                   {TRANSITION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -510,6 +528,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                     label="Duration"
                     value={transition.duration}
                     min={0.1} max={3} step={0.1}
+                    onFocus={commitHistory}
                     onChange={(v) => updateTransition({ duration: v })}
                     display={`${transition.duration.toFixed(1)}s`}
                   />
@@ -539,7 +558,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 <FieldLabel>Animation</FieldLabel>
                 <select
                   value={textAnim.type}
-                  onChange={(e) => updateTextAnim({ type: e.target.value as TextAnimationSettings["type"] })}
+                  onChange={(e) => { commitHistory(); updateTextAnim({ type: e.target.value as TextAnimationSettings["type"] }) }}
                   className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
                 >
                   {TEXT_ANIMATION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -551,6 +570,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                     label="Duration"
                     value={textAnim.duration}
                     min={0.1} max={5} step={0.1}
+                    onFocus={commitHistory}
                     onChange={(v) => updateTextAnim({ duration: v })}
                     display={`${textAnim.duration.toFixed(1)}s`}
                   />
@@ -558,6 +578,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                     label="Delay"
                     value={textAnim.delay}
                     min={0} max={5} step={0.1}
+                    onFocus={commitHistory}
                     onChange={(v) => updateTextAnim({ delay: v })}
                     display={`${textAnim.delay.toFixed(1)}s`}
                   />
@@ -593,6 +614,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 label="Rotation (°)"
                 value={selectedClip.rotation ?? 0}
                 min={-180} max={180} step={1}
+                onFocus={commitHistory}
                 onChange={(v) => handleChange({ rotation: v })}
                 display={`${selectedClip.rotation ?? 0}°`}
                 onDoubleClick={() => handleChange({ rotation: 0 })}
@@ -603,7 +625,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                 <FieldLabel>Filter</FieldLabel>
                 <select
                   value={currentFilter}
-                  onChange={(e) => updateFilter(e.target.value)}
+                  onChange={(e) => { commitHistory(); updateFilter(e.target.value) }}
                   className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
                 >
                   {VIDEO_FILTERS.map((f) => (
@@ -616,7 +638,7 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
               <FieldLabel>Track</FieldLabel>
               <select
                 value={selectedClip.track}
-                onChange={(e) => handleChange({ track: parseInt(e.target.value, 10) })}
+                onChange={(e) => { commitHistory(); handleChange({ track: parseInt(e.target.value, 10) }) }}
                 className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
               >
                 {Array.from({ length: trackCount }, (_, i) => (

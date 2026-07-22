@@ -42,13 +42,17 @@ export function colorGradeToFilter(g: ColorGradeSettings): string {
 
 export function ColorGradePanel({ clip }: { clip: LocalClip }) {
   const updateClipLocal = useEditorStore((s) => s.updateClipLocal)
+  const pushHistory = useEditorStore((s) => s.pushHistory)
   const grade = clip.colorGrade ?? DEFAULT_GRADE
 
   const update = (key: keyof ColorGradeSettings, value: number) => {
     updateClipLocal(clip.id, { colorGrade: { ...grade, [key]: value } })
   }
 
-  const reset = () => updateClipLocal(clip.id, { colorGrade: { ...DEFAULT_GRADE } })
+  const reset = () => {
+    pushHistory()
+    updateClipLocal(clip.id, { colorGrade: { ...DEFAULT_GRADE } })
+  }
 
   const isModified = Object.keys(DEFAULT_GRADE).some(
     (k) => (grade[k as keyof ColorGradeSettings] ?? 0) !== DEFAULT_GRADE[k as keyof ColorGradeSettings]
@@ -101,6 +105,7 @@ export function ColorGradePanel({ clip }: { clip: LocalClip }) {
               max={max}
               step={step}
               value={value}
+              onFocus={() => pushHistory()}
               onChange={(e) => update(key, parseFloat(e.target.value))}
               onDoubleClick={() => update(key, DEFAULT_GRADE[key])}
               className="w-full accent-primary"

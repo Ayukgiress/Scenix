@@ -86,6 +86,7 @@ export function useEditorShortcuts() {
             const clip = store.clips.find((c) => c.id === store.selectedClipId);
             if (clip && (clip.type === "video" || clip.type === "audio")) {
               const newVolume = (clip.volume ?? 1) > 0 ? 0 : 1;
+              store.pushHistory();
               store.updateClipLocal(store.selectedClipId, { volume: newVolume });
               store.syncUpdateClip(store.selectedClipId, { volume: newVolume }, accessToken);
             }

@@ -16,6 +16,8 @@ export interface TimelineClip {
   trimStart: number
   trimEnd: number
   volume?: number
+  pan?: number   // -1 (full left) to 1 (full right), default 0
+  muted?: boolean
   speed?: number // 0.1 – 4.0, default 1
   effects?: Effect[]
   transforms?: Transform

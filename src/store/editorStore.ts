@@ -25,6 +25,8 @@ export interface LocalClip extends Omit<TimelineClip, "file"> {
   y?: number;
   width?: number | null;
   height?: number | null;
+  pan?: number;
+  muted?: boolean;
   metadata?: Record<string, unknown>;
   transforms?: { x: number; y: number; scale: number; rotation: number; opacity: number };
   effects: Effect[];
@@ -224,7 +226,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const { clips, past } = get();
     const entry: HistoryEntry = { clips: clips.map((c) => ({ ...c })) };
     set({
-      past: [...past.slice(-49), entry],
+      past: [...past.slice(-99), entry],
       future: [],
       canUndo: true,
       canRedo: false,
@@ -351,14 +353,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setClips: (clips: LocalClip[]) => set({ clips }),
 
-  addClipLocal: (clip: LocalClip) =>
+  addClipLocal: (clip: LocalClip) => {
+    get().pushHistory();
     set((s) => {
-      // Ensure every clip has an effects array
       const clipWithEffects = { ...clip, effects: clip.effects || [] };
       const newClips = [...s.clips, clipWithEffects];
       const duration = Math.max(s.playback.duration, clip.startTime + clip.duration);
       return { clips: newClips, playback: { ...s.playback, duration } };
-    }),
+    });
+  },
 
   updateClipLocal: (id: string, updates: Partial<LocalClip>) =>
     set((s) => {
@@ -367,11 +370,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { clips, playback: { ...s.playback, duration } };
     }),
 
-  deleteClipLocal: (id: string) =>
+  deleteClipLocal: (id: string) => {
+    get().pushHistory();
     set((s) => ({
       clips: s.clips.filter((c) => c.id !== id),
       selectedClipId: s.selectedClipId === id ? null : s.selectedClipId,
-    })),
+    }));
+  },
 
   selectClip: (id) => set({ selectedClipId: id }),
 
@@ -382,8 +387,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const splitOffset = atTime - clip.startTime;
     if (splitOffset <= 0.1 || splitOffset >= clip.duration - 0.1) return;
-
-    get().pushHistory();
 
     const leftDuration = splitOffset;
     const rightStart = atTime;
@@ -516,12 +519,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const { projectId, clips } = get();
     const clip = clips.find((c) => c.id === id);
     if (!projectId) return;
-    get().pushHistory();
+    // history is pushed inside deleteClipLocal; avoid double-push here
     const previous = clip;
-    set((s) => ({
-      clips: s.clips.filter((c) => c.id !== id),
-      selectedClipId: s.selectedClipId === id ? null : s.selectedClipId,
-    }));
+    get().deleteClipLocal(id);
     if (!clip?.serverId) return;
     try {
       await api.deleteClip(token, projectId, clip.serverId);
@@ -534,18 +534,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   // Effect implementations
   addEffectToClip: (clipId: string, effect: Effect) => {
+    get().pushHistory();
     set((state) => ({
-      clips: state.clips.map((clip) => 
-        clip.id === clipId 
+      clips: state.clips.map((clip) =>
+        clip.id === clipId
           ? { ...clip, effects: [...clip.effects, effect] }
           : clip
       )
     }));
   },
   removeEffectFromClip: (clipId: string, effectId: string) => {
+    get().pushHistory();
     set((state) => ({
-      clips: state.clips.map((clip) => 
-        clip.id === clipId 
+      clips: state.clips.map((clip) =>
+        clip.id === clipId
           ? { ...clip, effects: clip.effects.filter((e) => e.id !== effectId) }
           : clip
       )

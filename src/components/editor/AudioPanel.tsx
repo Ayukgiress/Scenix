@@ -8,6 +8,7 @@ import { useEditorStore, type LocalClip, type LocalMedia } from "@/store/editorS
 import { useAuth } from "@/hooks/useAuth"
 import { api, uploadToCloudinary } from "@/lib/api"
 import { MUSIC_CATALOG, MOODS, GENRES, type CatalogTrack, type Mood, type Genre } from "@/lib/musicCatalog"
+import { useAudioMixerAPI } from "@/context/AudioMixerContext"
 
 function localId() {
   return `tmp_${crypto.randomUUID()}`
@@ -345,6 +346,7 @@ function MixerTab() {
   const currentTime = useEditorStore((s) => s.playback.currentTime)
   const isPlaying = useEditorStore((s) => s.playback.isPlaying)
   const { accessToken } = useAuth()
+  const mixerAPI = useAudioMixerAPI()
 
   const [soloId, setSoloId] = useState<string | null>(null)
 
@@ -360,12 +362,24 @@ function MixerTab() {
     }, 400)
   }
 
+  const handlePan = (clip: LocalClip, pan: number) => {
+    updateClipLocal(clip.id, { pan })
+    clearTimeout(debounceRefs.current[`pan_${clip.id}`])
+    debounceRefs.current[`pan_${clip.id}`] = setTimeout(() => {
+      if (accessToken) syncUpdateClip(clip.id, { pan }, accessToken)
+    }, 400)
+  }
+
   const handleMute = (clip: LocalClip) => {
     const next = clip.volume === 0 ? 1 : 0
     handleVolume(clip, next)
   }
 
-  const handleSolo = (id: string) => setSoloId((prev) => prev === id ? null : id)
+  const handleSolo = (id: string) => {
+    const next = soloId === id ? null : id
+    setSoloId(next)
+    mixerAPI?.setSolo(next)
+  }
 
   const handleDelete = async (clip: LocalClip) => {
     if (accessToken) await syncDeleteClip(clip.id, accessToken)
@@ -436,7 +450,7 @@ function MixerTab() {
               </div>
             )}
 
-            {/* Volume slider */}
+            {/* Volume + solo + delete */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleMute(clip)}
@@ -455,7 +469,6 @@ function MixerTab() {
                 className="h-1.5 flex-1 cursor-pointer accent-emerald-400"
               />
 
-              {/* Solo */}
               <button
                 onClick={() => handleSolo(clip.id)}
                 title="Solo"
@@ -466,7 +479,6 @@ function MixerTab() {
                 S
               </button>
 
-              {/* Delete */}
               <button
                 onClick={() => handleDelete(clip)}
                 title="Remove clip"
@@ -474,6 +486,28 @@ function MixerTab() {
               >
                 <Trash2 className="size-3" />
               </button>
+            </div>
+
+            {/* Pan slider */}
+            <div className="flex items-center gap-2">
+              <span className="w-6 shrink-0 text-center text-[9px] text-muted-foreground/60">L</span>
+              <input
+                type="range" min={-1} max={1} step={0.01}
+                value={clip.pan ?? 0}
+                onChange={(e) => handlePan(clip, parseFloat(e.target.value))}
+                className="h-1 flex-1 cursor-pointer accent-sky-400"
+                title={`Pan: ${Math.round((clip.pan ?? 0) * 100)}`}
+              />
+              <span className="w-6 shrink-0 text-center text-[9px] text-muted-foreground/60">R</span>
+              {(clip.pan ?? 0) !== 0 && (
+                <button
+                  onClick={() => handlePan(clip, 0)}
+                  className="text-[8px] text-muted-foreground/50 hover:text-foreground"
+                  title="Center pan"
+                >
+                  C
+                </button>
+              )}
             </div>
 
             {/* Trim indicators */}

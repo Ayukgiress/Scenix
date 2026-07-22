@@ -5,17 +5,19 @@ const DEFAULT: ChromaKeySettings = { enabled: false, color: "#00ff00", tolerance
 
 export function ChromaKeyPanel({ clip }: { clip: LocalClip }) {
   const updateClipLocal = useEditorStore((s) => s.updateClipLocal)
+  const pushHistory = useEditorStore((s) => s.pushHistory)
   const ck = clip.chromaKey ?? DEFAULT
 
-  const update = (patch: Partial<ChromaKeySettings>) =>
+  const update = (patch: Partial<ChromaKeySettings>) => {
     updateClipLocal(clip.id, { chromaKey: { ...ck, ...patch } })
+  }
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-muted-foreground">Enable Chroma Key</span>
         <button
-          onClick={() => update({ enabled: !ck.enabled })}
+          onClick={() => { pushHistory(); update({ enabled: !ck.enabled }) }}
           className={`relative h-5 w-9 rounded-full transition-colors ${ck.enabled ? "bg-primary" : "bg-muted"}`}
         >
           <span
@@ -32,6 +34,7 @@ export function ChromaKeyPanel({ clip }: { clip: LocalClip }) {
               <input
                 type="color"
                 value={ck.color}
+                onFocus={() => pushHistory()}
                 onChange={(e) => update({ color: e.target.value })}
                 className="h-8 w-16 cursor-pointer rounded border border-border bg-background"
               />
@@ -39,7 +42,7 @@ export function ChromaKeyPanel({ clip }: { clip: LocalClip }) {
                 {["#00ff00", "#00b140", "#0000ff", "#ff00ff"].map((c) => (
                   <button
                     key={c}
-                    onClick={() => update({ color: c })}
+                    onClick={() => { pushHistory(); update({ color: c }) }}
                     className={`size-6 rounded border-2 transition-all ${ck.color === c ? "border-primary scale-110" : "border-transparent"}`}
                     style={{ background: c }}
                     title={c}
@@ -57,6 +60,7 @@ export function ChromaKeyPanel({ clip }: { clip: LocalClip }) {
             <input
               type="range" min={0} max={1} step={0.01}
               value={ck.tolerance}
+              onFocus={() => pushHistory()}
               onChange={(e) => update({ tolerance: parseFloat(e.target.value) })}
               className="w-full accent-primary"
             />
@@ -70,6 +74,7 @@ export function ChromaKeyPanel({ clip }: { clip: LocalClip }) {
             <input
               type="range" min={0} max={1} step={0.01}
               value={ck.smoothing}
+              onFocus={() => pushHistory()}
               onChange={(e) => update({ smoothing: parseFloat(e.target.value) })}
               className="w-full accent-primary"
             />

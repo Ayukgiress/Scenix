@@ -3,10 +3,11 @@ import {
   Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Maximize2, Volume2, VolumeX
 } from "lucide-react"
-import { useEditorStore, type LocalClip } from "@/store/editorStore"
+import { useEditorStore } from "@/store/editorStore"
 import { useRealtimeCursors } from "@/hooks/useRealtimeCursors"
-import { interpolateKeyframes } from "@/components/editor/KeyframePanel"
-import { colorGradeToFilter } from "@/components/editor/ColorGradePanel"
+import { useCompositor } from "@/hooks/useCompositor"
+import { useAudioMixer } from "@/hooks/useAudioMixer"
+import { AudioMixerContext } from "@/context/AudioMixerContext"
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return "00:00"
@@ -24,38 +25,17 @@ const ASPECT_RATIOS: { label: string; value: "16/9" | "9/16" | "1/1" | "4/3" }[]
   { label: "4:3",  value: "4/3"  },
 ]
 
-function findActiveClip(clips: LocalClip[], t: number): LocalClip | null {
-  return (
-    clips.find(
-      (c) =>
-        c.type !== "audio" &&
-        c.type !== "text" &&
-        c.type !== "sticker" &&
-        t >= c.startTime - 0.05 &&
-        t < c.startTime + c.duration + 0.05,
-    ) ?? null
-  )
-}
-
-function findActiveAudio(clips: LocalClip[], t: number): LocalClip | null {
-  return (
-    clips.find(
-      (c) =>
-        c.type === "audio" &&
-        t >= c.startTime - 0.05 &&
-        t < c.startTime + c.duration + 0.05,
-    ) ?? null
-  )
+// Map aspect ratio string to [w, h] for canvas resolution
+const AR_DIMS: Record<string, [number, number]> = {
+  "16/9": [1280, 720],
+  "9/16": [720, 1280],
+  "1/1":  [720, 720],
+  "4/3":  [960, 720],
 }
 
 export function PreviewPanel() {
-  const videoRef     = useRef<HTMLVideoElement>(null)
-  const audioRef     = useRef<HTMLAudioElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  // Track what URL is currently loaded so we only reload when it changes
-  const loadedVideoUrl = useRef<string>("")
-  const loadedAudioUrl = useRef<string>("")
+  const canvasRef     = useRef<HTMLCanvasElement>(null)
+  const containerRef  = useRef<HTMLDivElement>(null)
 
   const isPlaying      = useEditorStore((s) => s.playback.isPlaying)
   const currentTime    = useEditorStore((s) => s.playback.currentTime)
@@ -75,21 +55,17 @@ export function PreviewPanel() {
   const [muted,     setMuted]     = useState(false)
   const [showRates, setShowRates] = useState(false)
   const [showAR,    setShowAR]    = useState(false)
-  const [videoError, setVideoError] = useState<string | null>(null)
 
   const remoteCursors = useRealtimeCursors()
 
-  // ── Active clips derived from store time ──────────────────────────────────
-  const activeClip = useMemo(
-    () => findActiveClip(clips, currentTime),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clips, Math.floor(currentTime * 4)],
-  )
-  const activeAudioClip = useMemo(
-    () => findActiveAudio(clips, currentTime),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clips, Math.floor(currentTime * 4)],
-  )
+  // ── canvas resolution follows aspect ratio ─────────────────────────────────
+  const [canvasW, canvasH] = AR_DIMS[aspectRatio] ?? [1280, 720]
+
+  // ── compositor ────────────────────────────────────────────────────────────
+  const { videoError }          = useCompositor(canvasRef, { muted, volume })
+  const { setSolo, insertEffect } = useAudioMixer({ muted, volume })
+
+  // ── text / sticker overlays (DOM, unchanged from before) ──────────────────
   const activeTextClips = useMemo(
     () =>
       clips.filter(
@@ -113,229 +89,6 @@ export function PreviewPanel() {
     [clips, Math.floor(currentTime * 4)],
   )
 
-  const finalFilter = useMemo(() => {
-    const clipFilter = (activeClip?.metadata?.filter as string) ?? ""
-    const gradeFilter = activeClip?.colorGrade ? colorGradeToFilter(activeClip.colorGrade) : ""
-    return [clipFilter, gradeFilter].filter(Boolean).join(" ")
-  }, [activeClip])
-
-  // Chroma key style
-  const chromaKeyStyle = useMemo(() => {
-    const ck = activeClip?.chromaKey
-    if (!ck?.enabled) return {}
-    return { mixBlendMode: "multiply" as const }
-  }, [activeClip])
-
-  // Keyframe-animated opacity for active clip
-  const animatedOpacity = useMemo(() => {
-    if (!activeClip?.keyframes?.length) return activeClip?.opacity ?? 1
-    const relTime = currentTime - activeClip.startTime
-    return interpolateKeyframes(activeClip.keyframes, "opacity", relTime, activeClip.opacity ?? 1)
-  }, [activeClip, currentTime])
-
-  // ── Load video whenever the active clip's URL changes ─────────────────────
-  const videoUrl = activeClip?.type === "video" ? (activeClip.url ?? "") : ""
-  const clipSpeed = activeClip?.speed ?? 1
-
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-
-    if (videoUrl === loadedVideoUrl.current) return
-    loadedVideoUrl.current = videoUrl
-    setVideoError(null)
-
-    if (!videoUrl) {
-      video.pause()
-      video.removeAttribute("src")
-      video.load()
-      return
-    }
-
-    const store = useEditorStore.getState()
-    const vc = findActiveClip(store.clips, store.playback.currentTime)
-    const clipTime = vc
-      ? store.playback.currentTime - vc.startTime + (vc.trimStart ?? 0)
-      : 0
-
-    video.pause()
-    video.src = videoUrl
-    video.volume = muted ? 0 : (vc?.volume ?? 1)
-    video.playbackRate = store.playback.playbackRate * clipSpeed
-
-    const onCanPlay = () => {
-      try { video.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
-      if (useEditorStore.getState().playback.isPlaying) {
-        video.play().catch((e) => {
-          if (e.name !== "AbortError") console.warn("video play:", e)
-        })
-      }
-    }
-
-    const onError = () => {
-      const err = video.error
-      setVideoError(
-        err ? `Video error ${err.code}: ${err.message}` : "Failed to load video",
-      )
-    }
-
-    video.addEventListener("canplay", onCanPlay, { once: true })
-    video.addEventListener("error", onError, { once: true })
-
-    return () => {
-      video.removeEventListener("canplay", onCanPlay)
-      video.removeEventListener("error", onError)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoUrl])
-
-  // ── Load audio whenever the active audio clip changes ─────────────────────
-  const audioUrl = activeAudioClip?.url ?? ""
-
-  useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    if (audioUrl === loadedAudioUrl.current) return
-    loadedAudioUrl.current = audioUrl
-
-    if (!audioUrl) {
-      audio.pause()
-      audio.removeAttribute("src")
-      audio.load()
-      return
-    }
-
-    const store = useEditorStore.getState()
-    const ac = findActiveAudio(store.clips, store.playback.currentTime)
-    const clipTime = ac
-      ? store.playback.currentTime - ac.startTime + (ac.trimStart ?? 0)
-      : 0
-
-    audio.pause()
-    audio.src = audioUrl
-    audio.volume = muted ? 0 : (ac?.volume ?? 1) * store.playback.volume
-    audio.playbackRate = store.playback.playbackRate
-
-    const onCanPlay = () => {
-      try { audio.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
-      if (useEditorStore.getState().playback.isPlaying) {
-        audio.play().catch((e) => {
-          if (e.name !== "AbortError") console.warn("audio play:", e)
-        })
-      }
-    }
-
-    audio.addEventListener("canplay", onCanPlay, { once: true })
-    return () => audio.removeEventListener("canplay", onCanPlay)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioUrl])
-
-  // ── Play / pause sync ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const video = videoRef.current
-    const audio = audioRef.current
-
-    if (!isPlaying) {
-      video?.pause()
-      audio?.pause()
-      return
-    }
-
-    // Start RAF loop to advance store time
-    let raf = 0
-    let alive = true
-    let lastTs: number | null = null
-
-    const step = (now: number) => {
-      if (!alive) return
-      const store = useEditorStore.getState()
-      const vid = videoRef.current
-
-      let next: number
-      if (vid && vid.src && !vid.paused && vid.readyState >= 2) {
-        // Derive store time from the actual video element position
-        const vc = findActiveClip(store.clips, store.playback.currentTime)
-        next = vc
-          ? vid.currentTime - (vc.trimStart ?? 0) + vc.startTime
-          : store.playback.currentTime + (lastTs !== null ? (now - lastTs) / 1000 : 0) * store.playback.playbackRate
-      } else {
-        const dt = lastTs !== null ? (now - lastTs) / 1000 : 0
-        next = store.playback.currentTime + dt * store.playback.playbackRate
-      }
-      lastTs = now
-
-      if (store.playback.duration > 0 && next >= store.playback.duration) {
-        store.pause()
-        store.setCurrentTime(store.playback.duration)
-        return
-      }
-
-      store.setCurrentTime(next)
-      raf = requestAnimationFrame(step)
-    }
-
-    // Kick off media elements
-    if (video?.src) {
-      video.play().catch((e) => {
-        if (e.name !== "AbortError") console.warn("video play:", e)
-      })
-    }
-    if (audio?.src) {
-      audio.play().catch((e) => {
-        if (e.name !== "AbortError") console.warn("audio play:", e)
-      })
-    }
-
-    raf = requestAnimationFrame(step)
-    return () => {
-      alive = false
-      cancelAnimationFrame(raf)
-      videoRef.current?.pause()
-      audioRef.current?.pause()
-    }
-  }, [isPlaying])
-
-  // ── Seek: when not playing, sync video position to store time ─────────────
-  const isPlayingRef = useRef(isPlaying)
-  useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
-
-  useEffect(() => {
-    if (isPlayingRef.current) return
-    const video = videoRef.current
-    const audio = audioRef.current
-    if (!video || !video.src) return
-
-    const store = useEditorStore.getState()
-    const vc = findActiveClip(store.clips, currentTime)
-    if (vc) {
-      const clipTime = currentTime - vc.startTime + (vc.trimStart ?? 0)
-      try { video.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
-    }
-    if (audio?.src) {
-      const ac = findActiveAudio(store.clips, currentTime)
-      if (ac) {
-        const clipTime = currentTime - ac.startTime + (ac.trimStart ?? 0)
-        try { audio.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
-      }
-    }
-  }, [currentTime])
-
-  // ── Playback rate (also accounts for clip speed) ─────────────────────────
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.playbackRate = playbackRate * clipSpeed
-    if (audioRef.current) audioRef.current.playbackRate = playbackRate
-  }, [playbackRate, clipSpeed])
-
-  // ── Volume / mute ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    const store = useEditorStore.getState()
-    const vc = findActiveClip(store.clips, store.playback.currentTime)
-    const ac = findActiveAudio(store.clips, store.playback.currentTime)
-    if (videoRef.current) videoRef.current.volume = muted ? 0 : (vc?.volume ?? 1)
-    if (audioRef.current) audioRef.current.volume = muted ? 0 : (ac?.volume ?? 1) * volume
-  }, [muted, volume])
-
   // ── UI helpers ────────────────────────────────────────────────────────────
   const handleSeek = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -356,36 +109,33 @@ export function PreviewPanel() {
     else document.exitFullscreen?.()
   }
 
+  // Close dropdowns on outside click
+  useEffect(() => {
+    if (!showRates && !showAR) return
+    const handler = () => { setShowRates(false); setShowAR(false) }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [showRates, showAR])
+
   const showControls = hovering || !isPlaying || clips.length === 0
 
   return (
+    <AudioMixerContext.Provider value={{ setSolo, insertEffect }}>
     <section
       className="relative h-full w-full bg-[#0a0a0c] overflow-hidden"
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
-      <div
-        ref={containerRef}
-        className="absolute inset-0"
-      >
-        {/* Main video element — no crossOrigin so Cloudinary range requests work */}
-        <video
-          ref={videoRef}
-          className="absolute inset-0 h-full w-full object-cover"
-          playsInline
-          preload="auto"
-          style={{ filter: finalFilter, opacity: animatedOpacity, ...chromaKeyStyle }}
-        />
-        <audio ref={audioRef} className="hidden" preload="auto" />
+      <div ref={containerRef} className="absolute inset-0">
 
-        {/* Image clip */}
-        {activeClip?.type === "image" && activeClip.url && (
-          <img
-            src={activeClip.url}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        )}
+        {/* ── Compositor canvas ── */}
+        <canvas
+          ref={canvasRef}
+          width={canvasW}
+          height={canvasH}
+          className="absolute inset-0 h-full w-full"
+          style={{ objectFit: "contain" }}
+        />
 
         {/* Text overlays */}
         {activeTextClips.map((tc) => {
@@ -422,12 +172,7 @@ export function PreviewPanel() {
             <div
               key={tc.id}
               className="pointer-events-none absolute"
-              style={{
-                left: `${td.x}%`,
-                top: `${td.y}%`,
-                transform: "translate(-50%, -50%)",
-                ...animStyle,
-              }}
+              style={{ left: `${td.x}%`, top: `${td.y}%`, transform: "translate(-50%, -50%)", ...animStyle }}
             >
               <span
                 className="rounded px-2 py-1 text-center whitespace-pre-wrap"
@@ -620,5 +365,6 @@ export function PreviewPanel() {
         </div>
       </div>
     </section>
+    </AudioMixerContext.Provider>
   )
 }
