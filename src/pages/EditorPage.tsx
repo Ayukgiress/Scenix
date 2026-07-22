@@ -8,6 +8,8 @@ import { EffectsPanel } from "@/components/editor/EffectsPanel"
 import { PreviewPanel } from "@/components/editor/PreviewPanel"
 import { PropertiesPanel } from "@/components/editor/PropertiesPanel"
 import { Timeline } from "@/components/editor/Timeline"
+import { SubtitlePanel } from "@/components/editor/SubtitlePanel"
+import { VoiceoverPanel } from "@/components/editor/VoiceoverPanel"
 import { useEditorStore } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
 import { useEditorShortcuts, shortcutHelpBus } from "@/hooks/useEditorShortcuts"
@@ -57,7 +59,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
 }
 
 type LoadState = "init" | "loading" | "ready" | "missing" | "error" | "no-auth"
-type SidebarTab = "media" | "audio" | "text" | "effects"
+type SidebarTab = "media" | "audio" | "text" | "effects" | "subtitles" | "voiceover"
 
 function Spinner() {
   return (
@@ -295,13 +297,13 @@ export function EditorPage() {
       <EditorTopbar />
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel */}
-        <div className="flex w-60 shrink-0 flex-col border-r border-border bg-card/60">
-          <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-2">
-            {(["media", "audio", "text", "effects"] as const).map((tab) => (
+        <div className="flex w-64 shrink-0 flex-col border-r border-border bg-card/60">
+          <div className="flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2">
+            {(["media", "audio", "text", "effects", "subtitles", "voiceover"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                className={`shrink-0 rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
                   activeTab === tab
                     ? "bg-primary/15 text-primary"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -316,6 +318,8 @@ export function EditorPage() {
             {activeTab === "audio" && <AudioPanel />}
             {activeTab === "text" && <TextPanel />}
             {activeTab === "effects" && <EffectsPanel />}
+            {activeTab === "subtitles" && <SubtitlePanel />}
+            {activeTab === "voiceover" && <VoiceoverPanel />}
           </div>
         </div>
 

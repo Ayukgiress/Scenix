@@ -3,20 +3,29 @@ import { useNavigate, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
-import { Download, X, Loader2 } from "lucide-react"
+import { Download, X, Loader2, Zap } from "lucide-react"
 
 type Format = "MP4" | "MOV" | "WebM" | "GIF"
-type Resolution = "1080p" | "1440p" | "4K" | "8K"
+type Resolution = "720p" | "1080p" | "1440p" | "4K"
 type Fps = "24" | "30" | "60"
 
 const resolutions: { id: Resolution; label: string; sub: string }[] = [
+  { id: "720p",  label: "720p",  sub: "HD" },
   { id: "1080p", label: "1080p", sub: "Full HD" },
   { id: "1440p", label: "1440p", sub: "QHD" },
   { id: "4K",    label: "4K",    sub: "Ultra HD" },
-  { id: "8K",    label: "8K",    sub: "ProRes" },
 ]
 const formats: Format[] = ["MP4", "MOV", "WebM", "GIF"]
 const frameRates: Fps[] = ["24", "30", "60"]
+
+const SOCIAL_PRESETS = [
+  { label: "YouTube",   format: "MP4" as Format, resolution: "1080p" as Resolution, fps: "30" as Fps, icon: "▶" },
+  { label: "TikTok",    format: "MP4" as Format, resolution: "1080p" as Resolution, fps: "30" as Fps, icon: "♪" },
+  { label: "Instagram", format: "MP4" as Format, resolution: "1080p" as Resolution, fps: "30" as Fps, icon: "◈" },
+  { label: "Twitter/X", format: "MP4" as Format, resolution: "720p"  as Resolution, fps: "30" as Fps, icon: "✕" },
+  { label: "GIF",       format: "GIF" as Format, resolution: "720p"  as Resolution, fps: "24" as Fps, icon: "◎" },
+  { label: "4K Master", format: "MOV" as Format, resolution: "4K"    as Resolution, fps: "60" as Fps, icon: "★" },
+]
 
 type ExportPhase = "idle" | "submitting" | "polling" | "done" | "error"
 
@@ -32,6 +41,7 @@ export function ExportDialog() {
   const [fps,        setFps]        = useState<Fps>("30")
   const [proRes,     setProRes]     = useState(false)
   const [twoPass,    setTwoPass]    = useState(false)
+  const [showPresets, setShowPresets] = useState(false)
 
   const [phase,      setPhase]      = useState<ExportPhase>("idle")
   const [progress,   setProgress]   = useState(0)
@@ -125,6 +135,33 @@ export function ExportDialog() {
         </div>
 
         <div className="space-y-4 p-5">
+          {/* Social presets */}
+          <div>
+            <button
+              onClick={() => setShowPresets((v) => !v)}
+              className="flex w-full items-center justify-between rounded-md border border-border/60 bg-background/40 px-3 py-2 text-xs text-foreground hover:bg-muted/40"
+              disabled={busy}
+            >
+              <span className="flex items-center gap-1.5"><Zap className="size-3 text-primary" /> Quick presets</span>
+              <span className="text-muted-foreground">{showPresets ? "▲" : "▼"}</span>
+            </button>
+            {showPresets && (
+              <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+                {SOCIAL_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    disabled={busy}
+                    onClick={() => { setFormat(p.format); setResolution(p.resolution); setFps(p.fps); setShowPresets(false) }}
+                    className="flex flex-col items-center gap-0.5 rounded-md border border-border/60 bg-background/40 px-2 py-2 text-center text-xs hover:border-primary/50 hover:bg-muted/40 disabled:opacity-50"
+                  >
+                    <span className="text-base">{p.icon}</span>
+                    <span className="font-medium text-foreground">{p.label}</span>
+                    <span className="text-[9px] text-muted-foreground">{p.resolution} {p.fps}fps</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Filename */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">

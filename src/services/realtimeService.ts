@@ -108,7 +108,6 @@ class RealtimeService {
     // ─── Dashboard project events ────────────────────────────────────────
 
     this.socket.on("project:created", (project: Project) => {
-      // Lazily import to avoid circular deps at module load time
       import("@/store/dashboardStore").then(({ useDashboardStore }) => {
         const { projects, stats } = useDashboardStore.getState()
         if (projects.some((p) => p.id === project.id)) return
@@ -116,6 +115,16 @@ class RealtimeService {
         useDashboardStore.setState((s) => ({
           projects: [newProject, ...s.projects],
           stats: { ...s.stats, totalProjects: s.stats.totalProjects + 1 },
+          activities: [
+            {
+              id: `proj-created-${project.id}`,
+              icon: "grid",
+              text: `Project "${project.title}" created`,
+              time: "Just now",
+              timestamp: Date.now(),
+            },
+            ...s.activities,
+          ].slice(0, 10),
         }))
       })
     })
@@ -134,9 +143,20 @@ class RealtimeService {
 
     this.socket.on("project:deleted", (data: { id: string }) => {
       import("@/store/dashboardStore").then(({ useDashboardStore }) => {
+        const project = useDashboardStore.getState().projects.find((p) => p.id === data.id)
         useDashboardStore.setState((s) => ({
           projects: s.projects.filter((p) => p.id !== data.id),
           stats: { ...s.stats, totalProjects: Math.max(0, s.stats.totalProjects - 1) },
+          activities: [
+            {
+              id: `proj-deleted-${data.id}-${Date.now()}`,
+              icon: "file",
+              text: `Project "${project?.title ?? "Untitled"}" deleted`,
+              time: "Just now",
+              timestamp: Date.now(),
+            },
+            ...s.activities,
+          ].slice(0, 10),
         }))
       })
     })

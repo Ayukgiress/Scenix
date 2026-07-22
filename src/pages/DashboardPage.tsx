@@ -278,6 +278,11 @@ export function DashboardPage() {
       .createProjectAndReturn(accessToken, title);
     if (created?.id) {
       toastSuccess("Project created successfully!");
+      useDashboardStore.getState().addActivity({
+        icon: "grid",
+        text: `Project "${title}" created`,
+        time: "Just now",
+      });
       navigate(`/editor?project=${created.id}`);
     }
     setCreateModalOpen(false);
@@ -290,7 +295,13 @@ export function DashboardPage() {
 
   const handleDeleteProject = () => {
     if (!accessToken || !projectToDelete) return;
+    const project = useDashboardStore.getState().projects.find((p) => p.id === projectToDelete);
     deleteProject(accessToken, projectToDelete);
+    useDashboardStore.getState().addActivity({
+      icon: "file",
+      text: `Project "${project?.title ?? "Untitled"}" deleted`,
+      time: "Just now",
+    });
     toastSuccess("Project deleted successfully!");
     setDeleteModalOpen(false);
     setProjectToDelete(null);
@@ -458,15 +469,15 @@ export function DashboardPage() {
               <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
                 <span>
                   <span className="mr-1 inline-block size-2 rounded-full bg-primary align-middle" />
-                  Video — {(stats.storageUsed * 0.88).toFixed(1)} GB
+                  Video — {stats.storageVideoGB.toFixed(2)} GB
                 </span>
                 <span>
                   <span className="mr-1 inline-block size-2 rounded-full bg-blue-400 align-middle" />
-                  Audio — {(stats.storageUsed * 0.12).toFixed(1)} GB
+                  Audio — {stats.storageAudioGB.toFixed(2)} GB
                 </span>
                 <span>
                   <span className="mr-1 inline-block size-2 rounded-full bg-muted-foreground align-middle" />
-                  Free — {Math.max(0, stats.storageTotal - stats.storageUsed).toFixed(1)} GB
+                  Free — {Math.max(0, stats.storageTotal - stats.storageUsed).toFixed(2)} GB
                 </span>
               </div>
             </div>
@@ -583,26 +594,29 @@ export function DashboardPage() {
                   Quick actions
                 </h2>
                 <div className="flex flex-col gap-2">
-                  {[
+                  {([
                     {
                       icon: "ai",
                       label: "Generate with AI",
                       sub: "Text to video",
+                      to: "/editor",
                     },
                     {
                       icon: "edit",
                       label: "Open editor",
                       sub: "Start a new cut",
+                      to: "/editor",
                     },
                     {
                       icon: "export",
                       label: "Export last project",
-                      sub: "Brand Reel 2025",
+                      sub: projects[0]?.title ?? "No projects yet",
+                      to: projects[0] ? `/editor?project=${projects[0].id}` : "/editor",
                     },
-                  ].map((q) => (
+                  ] as const).map((q) => (
                     <Link
                       key={q.label}
-                      to="/editor"
+                      to={q.to}
                       className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 transition-colors hover:border-border/80 hover:bg-muted/40"
                     >
                       <div className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-background text-muted-foreground">

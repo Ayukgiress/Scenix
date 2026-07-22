@@ -5,6 +5,8 @@ import {
 } from "lucide-react"
 import { useEditorStore, type LocalClip } from "@/store/editorStore"
 import { useRealtimeCursors } from "@/hooks/useRealtimeCursors"
+import { interpolateKeyframes } from "@/components/editor/KeyframePanel"
+import { colorGradeToFilter } from "@/components/editor/ColorGradePanel"
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return "00:00"
@@ -113,11 +115,27 @@ export function PreviewPanel() {
 
   const finalFilter = useMemo(() => {
     const clipFilter = (activeClip?.metadata?.filter as string) ?? ""
-    return [clipFilter].filter(Boolean).join(" ")
+    const gradeFilter = activeClip?.colorGrade ? colorGradeToFilter(activeClip.colorGrade) : ""
+    return [clipFilter, gradeFilter].filter(Boolean).join(" ")
   }, [activeClip])
+
+  // Chroma key style
+  const chromaKeyStyle = useMemo(() => {
+    const ck = activeClip?.chromaKey
+    if (!ck?.enabled) return {}
+    return { mixBlendMode: "multiply" as const }
+  }, [activeClip])
+
+  // Keyframe-animated opacity for active clip
+  const animatedOpacity = useMemo(() => {
+    if (!activeClip?.keyframes?.length) return activeClip?.opacity ?? 1
+    const relTime = currentTime - activeClip.startTime
+    return interpolateKeyframes(activeClip.keyframes, "opacity", relTime, activeClip.opacity ?? 1)
+  }, [activeClip, currentTime])
 
   // ── Load video whenever the active clip's URL changes ─────────────────────
   const videoUrl = activeClip?.type === "video" ? (activeClip.url ?? "") : ""
+  const clipSpeed = activeClip?.speed ?? 1
 
   useEffect(() => {
     const video = videoRef.current
@@ -143,7 +161,7 @@ export function PreviewPanel() {
     video.pause()
     video.src = videoUrl
     video.volume = muted ? 0 : (vc?.volume ?? 1)
-    video.playbackRate = store.playback.playbackRate
+    video.playbackRate = store.playback.playbackRate * clipSpeed
 
     const onCanPlay = () => {
       try { video.currentTime = Math.max(0, clipTime) } catch { /* ignore */ }
@@ -303,11 +321,11 @@ export function PreviewPanel() {
     }
   }, [currentTime])
 
-  // ── Playback rate ─────────────────────────────────────────────────────────
+  // ── Playback rate (also accounts for clip speed) ─────────────────────────
   useEffect(() => {
-    if (videoRef.current) videoRef.current.playbackRate = playbackRate
+    if (videoRef.current) videoRef.current.playbackRate = playbackRate * clipSpeed
     if (audioRef.current) audioRef.current.playbackRate = playbackRate
-  }, [playbackRate])
+  }, [playbackRate, clipSpeed])
 
   // ── Volume / mute ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -356,7 +374,7 @@ export function PreviewPanel() {
           className="absolute inset-0 h-full w-full object-cover"
           playsInline
           preload="auto"
-          style={{ filter: finalFilter }}
+          style={{ filter: finalFilter, opacity: animatedOpacity, ...chromaKeyStyle }}
         />
         <audio ref={audioRef} className="hidden" preload="auto" />
 
@@ -373,9 +391,33 @@ export function PreviewPanel() {
         {activeTextClips.map((tc) => {
           const td = {
             text: "Text", fontSize: 32, fontWeight: "bold",
-            color: "#ffffff", x: 50, y: 80,
+            color: "#ffffff", x: 50, y: 80, fontFamily: "Inter",
             ...(tc.metadata ?? {}),
-          } as { text: string; fontSize: number; fontWeight: string; color: string; x: number; y: number }
+          } as { text: string; fontSize: number; fontWeight: string; color: string; x: number; y: number; fontFamily: string }
+          const anim = tc.textAnimation
+          const relTime = currentTime - tc.startTime
+          const animProgress = anim && anim.type !== "none" && anim.duration > 0
+            ? Math.min(1, Math.max(0, (relTime - anim.delay) / anim.duration))
+            : 1
+
+          let animStyle: React.CSSProperties = {}
+          if (anim && anim.type !== "none") {
+            if (anim.type === "fade-in") animStyle = { opacity: animProgress }
+            else if (anim.type === "slide-up") animStyle = { opacity: animProgress, transform: `translate(-50%, calc(-50% + ${(1 - animProgress) * 40}px))` }
+            else if (anim.type === "slide-down") animStyle = { opacity: animProgress, transform: `translate(-50%, calc(-50% - ${(1 - animProgress) * 40}px))` }
+            else if (anim.type === "zoom-in") animStyle = { opacity: animProgress, transform: `translate(-50%, -50%) scale(${0.5 + animProgress * 0.5})` }
+            else if (anim.type === "bounce") {
+              const bounce = Math.abs(Math.sin(relTime * 8)) * (1 - animProgress) * 20
+              animStyle = { transform: `translate(-50%, calc(-50% - ${bounce}px))` }
+            } else if (anim.type === "typewriter") {
+              const chars = Math.floor(animProgress * td.text.length)
+              td.text = td.text.slice(0, chars)
+            } else if (anim.type === "glitch") {
+              const glitchX = animProgress < 1 ? (Math.random() - 0.5) * 8 : 0
+              animStyle = { transform: `translate(calc(-50% + ${glitchX}px), -50%)`, filter: animProgress < 1 ? "hue-rotate(90deg)" : "none" }
+            }
+          }
+
           return (
             <div
               key={tc.id}
@@ -384,6 +426,7 @@ export function PreviewPanel() {
                 left: `${td.x}%`,
                 top: `${td.y}%`,
                 transform: "translate(-50%, -50%)",
+                ...animStyle,
               }}
             >
               <span
@@ -392,6 +435,7 @@ export function PreviewPanel() {
                   fontSize: `${td.fontSize * 0.6}px`,
                   fontWeight: td.fontWeight,
                   color: td.color,
+                  fontFamily: td.fontFamily,
                   textShadow: "0 2px 8px rgba(0,0,0,0.8)",
                 }}
               >

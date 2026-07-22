@@ -8,6 +8,10 @@ import {
 import { useEffect, useRef, useState } from "react"
 import { useEditorStore, type LocalClip } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
+import { KeyframePanel } from "@/components/editor/KeyframePanel"
+import { ColorGradePanel } from "@/components/editor/ColorGradePanel"
+import { ChromaKeyPanel } from "@/components/editor/ChromaKeyPanel"
+import type { TransitionSettings, TextAnimationSettings } from "@/types/editor"
 
 function formatTimeDetailed(seconds: number): string {
   const mins = Math.floor(seconds / 60)
@@ -142,6 +146,14 @@ const VIDEO_FILTERS = [
   { label: "Fade",  value: "opacity(0.85) brightness(1.1) contrast(0.9)" },
 ]
 
+const TRANSITION_TYPES: TransitionSettings["type"][] = [
+  "none", "fade", "dissolve", "wipe-right", "wipe-left", "zoom-in", "zoom-out", "slide-right", "slide-left"
+]
+
+const TEXT_ANIMATION_TYPES: TextAnimationSettings["type"][] = [
+  "none", "fade-in", "typewriter", "slide-up", "slide-down", "bounce", "zoom-in", "glitch"
+]
+
 function Section({
   title,
   children,
@@ -268,6 +280,20 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
   const updateFilter = (filter: string) => {
     handleChange({ metadata: { ...(selectedClip.metadata ?? {}), filter } })
   }
+
+  // Speed
+  const speed = selectedClip.speed ?? 1
+  const updateSpeed = (v: number) => handleChange({ speed: Math.max(0.1, Math.min(4, v)) })
+
+  // Transition
+  const transition = selectedClip.transition ?? { type: "none", duration: 0.5, position: "in" }
+  const updateTransition = (patch: Partial<typeof transition>) =>
+    handleChange({ transition: { ...transition, ...patch } })
+
+  // Text animation
+  const textAnim = selectedClip.textAnimation ?? { type: "none", duration: 0.5, delay: 0 }
+  const updateTextAnim = (patch: Partial<typeof textAnim>) =>
+    handleChange({ textAnimation: { ...textAnim, ...patch } })
 
   const canSplit =
     currentTime > selectedClip.startTime + 0.1 &&
@@ -437,6 +463,127 @@ function PropertiesContent({ selectedClip }: { selectedClip: LocalClip }) {
                   <NumberField value={textData.y} onChange={(v) => updateText({ y: v })} />
                 </div>
               </div>
+            </Section>
+          )}
+
+          {/* Speed */}
+          {(selectedClip.type === "video" || selectedClip.type === "audio") && (
+            <Section title="Speed">
+              <SliderRow
+                label="Playback Speed"
+                value={speed}
+                min={0.1} max={4} step={0.05}
+                onChange={updateSpeed}
+                display={`${speed.toFixed(2)}x`}
+                onDoubleClick={() => updateSpeed(1)}
+              />
+              <div className="flex flex-wrap gap-1">
+                {[0.25, 0.5, 1, 1.5, 2, 4].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => updateSpeed(s)}
+                    className={`rounded px-2 py-0.5 text-[10px] transition-colors ${speed === s ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Transition */}
+          {(selectedClip.type === "video" || selectedClip.type === "image") && (
+            <Section title="Transition" collapsible defaultOpen={false}>
+              <div>
+                <FieldLabel>Type</FieldLabel>
+                <select
+                  value={transition.type}
+                  onChange={(e) => updateTransition({ type: e.target.value as TransitionSettings["type"] })}
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
+                >
+                  {TRANSITION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              {transition.type !== "none" && (
+                <>
+                  <SliderRow
+                    label="Duration"
+                    value={transition.duration}
+                    min={0.1} max={3} step={0.1}
+                    onChange={(v) => updateTransition({ duration: v })}
+                    display={`${transition.duration.toFixed(1)}s`}
+                  />
+                  <div>
+                    <FieldLabel>Position</FieldLabel>
+                    <div className="flex gap-1">
+                      {(["in", "out", "both"] as const).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => updateTransition({ position: p })}
+                          className={`flex-1 rounded py-1 text-[10px] transition-colors ${transition.position === p ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </Section>
+          )}
+
+          {/* Text animation */}
+          {selectedClip.type === "text" && (
+            <Section title="Text Animation" collapsible defaultOpen={false}>
+              <div>
+                <FieldLabel>Animation</FieldLabel>
+                <select
+                  value={textAnim.type}
+                  onChange={(e) => updateTextAnim({ type: e.target.value as TextAnimationSettings["type"] })}
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary"
+                >
+                  {TEXT_ANIMATION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              {textAnim.type !== "none" && (
+                <>
+                  <SliderRow
+                    label="Duration"
+                    value={textAnim.duration}
+                    min={0.1} max={5} step={0.1}
+                    onChange={(v) => updateTextAnim({ duration: v })}
+                    display={`${textAnim.duration.toFixed(1)}s`}
+                  />
+                  <SliderRow
+                    label="Delay"
+                    value={textAnim.delay}
+                    min={0} max={5} step={0.1}
+                    onChange={(v) => updateTextAnim({ delay: v })}
+                    display={`${textAnim.delay.toFixed(1)}s`}
+                  />
+                </>
+              )}
+            </Section>
+          )}
+
+          {/* Color Grading */}
+          {(selectedClip.type === "video" || selectedClip.type === "image") && (
+            <Section title="Color Grading" collapsible defaultOpen={false}>
+              <ColorGradePanel clip={selectedClip} />
+            </Section>
+          )}
+
+          {/* Chroma Key */}
+          {selectedClip.type === "video" && (
+            <Section title="Chroma Key" collapsible defaultOpen={false}>
+              <ChromaKeyPanel clip={selectedClip} />
+            </Section>
+          )}
+
+          {/* Keyframe Animation */}
+          {(selectedClip.type === "video" || selectedClip.type === "image" || selectedClip.type === "text") && (
+            <Section title="Keyframe Animation" collapsible defaultOpen={false}>
+              <KeyframePanel clip={selectedClip} />
             </Section>
           )}
 

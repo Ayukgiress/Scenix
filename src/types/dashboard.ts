@@ -31,6 +31,8 @@ export interface Stats {
   totalProjects: number
   storageUsed: number
   storageTotal: number
+  storageVideoGB: number
+  storageAudioGB: number
   exports: number
   aiGenerations: number
 }

@@ -4,6 +4,8 @@ import type { Media, Export } from "@/lib/api"
 import { api } from "@/lib/api"
 import type { Project as ApiProject } from "@/lib/api"
 
+const STORAGE_QUOTA_GB = 50 // default free-plan quota
+
 interface DashboardState {
   projects: Project[]
   activities: Activity[]
@@ -23,7 +25,7 @@ interface DashboardState {
   addActivity: (activity: Omit<Activity, "id" | "timestamp">) => void
   updateProjectProgress: (id: string, progress: number) => void
   updateProjectStatus: (id: string, status: ProjectStatus) => void
-  incrementStat: (key: keyof Omit<Stats, "storageUsed" | "storageTotal">) => void
+  incrementStat: (key: keyof Omit<Stats, "storageUsed" | "storageTotal" | "storageVideoGB" | "storageAudioGB">) => void
   setError: (error: string | null) => void
 }
 
@@ -46,7 +48,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   stats: {
     totalProjects: 0,
     storageUsed: 0,
-    storageTotal: 0,
+    storageTotal: STORAGE_QUOTA_GB,
+    storageVideoGB: 0,
+    storageAudioGB: 0,
     exports: 0,
     aiGenerations: 0,
   },
@@ -94,13 +98,22 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       const totalSize = media.reduce((sum, m) => sum + (m.size || 0), 0)
       const storageUsedGB = Math.round((totalSize / (1024 * 1024 * 1024)) * 100) / 100
 
+      // Compute real video vs audio breakdown
+      const videoBytes = media
+        .filter((m) => m.type === "video" || m.type === "image")
+        .reduce((s, m) => s + (m.size || 0), 0)
+      const audioBytes = media
+        .filter((m) => m.type === "audio")
+        .reduce((s, m) => s + (m.size || 0), 0)
+
       set({
         media,
         stats: {
           ...get().stats,
           storageUsed: storageUsedGB,
-          // Default plan quota: 50 GB — will be overridden when user plan API is available
-          storageTotal: Math.max(50, Math.ceil(storageUsedGB * 2)),
+          storageTotal: STORAGE_QUOTA_GB,
+          storageVideoGB: Math.round((videoBytes / (1024 * 1024 * 1024)) * 100) / 100,
+          storageAudioGB: Math.round((audioBytes / (1024 * 1024 * 1024)) * 100) / 100,
         },
       })
     } catch (error) {
@@ -112,16 +125,23 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   fetchExports: async (token: string) => {
     try {
       const exportsResp = await api.getExports(token)
-      const activities = exportsResp.slice(0, 10).map((e) => ({
+      const exportActivities: Activity[] = exportsResp.slice(0, 10).map((e) => ({
         id: e.id,
         icon: "export",
         text: `Export ${e.status.toLowerCase()} — ${e.format.toUpperCase()} ${e.quality}`,
-        time: new Date(e.createdAt).toLocaleString(),
+        time: timeAgo(e.createdAt),
         timestamp: new Date(e.createdAt).getTime(),
       }))
+
+      // Merge with existing project activities, sort by timestamp desc
+      const existing = get().activities.filter((a) => a.icon !== "export")
+      const merged = [...exportActivities, ...existing]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 10)
+
       set({
         exports: exportsResp,
-        activities,
+        activities: merged,
         stats: {
           ...get().stats,
           exports: exportsResp.length,

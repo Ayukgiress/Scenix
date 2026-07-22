@@ -378,6 +378,21 @@ function ClipElement({
         <span className="truncate text-[10px] font-medium text-white drop-shadow">
           {clipLabel}
         </span>
+        {clip.speed && clip.speed !== 1 && (
+          <span className="shrink-0 rounded bg-black/40 px-1 py-0.5 text-[8px] font-bold text-yellow-300">
+            {clip.speed}x
+          </span>
+        )}
+        {clip.keyframes && clip.keyframes.length > 0 && (
+          <span className="shrink-0 text-[8px] text-white/60" title={`${clip.keyframes.length} keyframes`}>
+            ◆{clip.keyframes.length}
+          </span>
+        )}
+        {clip.chromaKey?.enabled && (
+          <span className="shrink-0 rounded bg-green-500/30 px-1 py-0.5 text-[8px] text-green-300" title="Chroma key active">
+            CK
+          </span>
+        )}
         <span className="ml-auto shrink-0 text-[9px] text-white/60">
           {formatTime(clip.duration)}
         </span>

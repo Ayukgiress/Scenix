@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { TimelineClip, PlaybackState, MediaAsset, Effect } from "@/types/editor";
+import type { TimelineClip, PlaybackState, MediaAsset, Effect, Keyframe, ChromaKeySettings, ColorGradeSettings, TextAnimationSettings, TransitionSettings } from "@/types/editor";
 import {
   api,
   clipFromServer,
@@ -7,10 +7,11 @@ import {
   type Media,
   type Project,
 } from "@/lib/api";
+import { mediaCache } from "@/lib/mediaCache";
 
 export type ClipType = "video" | "audio" | "image" | "text" | "sticker";
 
-export type { Effect } from "@/types/editor";
+export type { Effect, Keyframe, ChromaKeySettings, ColorGradeSettings, TextAnimationSettings, TransitionSettings } from "@/types/editor";
 
 export interface LocalClip extends Omit<TimelineClip, "file"> {
   serverId?: string;
@@ -26,7 +27,13 @@ export interface LocalClip extends Omit<TimelineClip, "file"> {
   height?: number | null;
   metadata?: Record<string, unknown>;
   transforms?: { x: number; y: number; scale: number; rotation: number; opacity: number };
-  effects: Effect[]; // Clip-specific effects
+  effects: Effect[];
+  speed?: number;
+  keyframes?: Keyframe[];
+  chromaKey?: ChromaKeySettings;
+  colorGrade?: ColorGradeSettings;
+  textAnimation?: TextAnimationSettings;
+  transition?: TransitionSettings;
 }
 
 export interface LocalMedia extends Omit<MediaAsset, "file"> {
@@ -275,7 +282,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         api.getMedia(token, { projectId }).catch(() => [] as Media[]),
       ]);
 
-      const mediaAssets = serverMedia.map(serverMediaToLocal);
+      const mediaAssets = serverMedia.map(serverMediaToLocal).map((m) => mediaCache.hydrate(m));
       const mediaByServerId = new Map(mediaAssets.map((m) => [m.serverId, m]));
       const clips: LocalClip[] = serverClips.map((sc) => serverClipToLocal(sc, mediaByServerId));
       const duration = clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0);

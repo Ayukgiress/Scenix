@@ -8,6 +8,7 @@ import {
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/hooks/useToast"
 import { api, uploadToCloudinary } from "@/lib/api"
+import { mediaCache } from "@/lib/mediaCache"
 
 type AssetType = "video" | "audio" | "image"
 type ViewMode = "grid" | "list"
@@ -174,6 +175,11 @@ export function MediaPanel() {
           duration: persisted.duration ?? localDuration,
           uploading: false,
           progress: 100,
+        })
+        // Cache metadata for future sessions
+        mediaCache.set(`srv_${persisted.id}`, {
+          duration: persisted.duration ?? localDuration,
+          thumbnailUrl: persisted.thumbnailUrl ?? undefined,
         })
         try {
           URL.revokeObjectURL(previewUrl)
