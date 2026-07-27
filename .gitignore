@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+public/12779446_3840_2160_24fps.mp4 public/15488611_1920_1080_30fps.mp4 public/AI-Generated Blockbuster Scene_ _The Forest of Giants Awakens_ (Sora 2).mp4 public/Cute or Creepy_ AI Fruit Babies Eating Real Fruit🍓👶_ The Ultimate Oddly Satisfying AI ASMR.mp4 public/videoplayback.mp4
+public/*.mp4
+public/*.webm
+public/*.mov
+.autoclaw/orchestrator/comms/
+.autoclaw/orchestrator/audit/
+.autoclaw/kg/
+.kilocode/
+.autoclaw/
+.kilocode/
