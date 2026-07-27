@@ -373,6 +373,7 @@ class RealtimeService {
       track: base.track,
       trimStart: base.trimStart,
       trimEnd: base.trimEnd,
+      effects: [],
       volume: (metadata?.volume as number) ?? 1,
       opacity: base.opacity,
       rotation: base.rotation,

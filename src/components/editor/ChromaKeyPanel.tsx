@@ -80,11 +80,7 @@ export function ChromaKeyPanel({ clip }: { clip: LocalClip }) {
             />
           </div>
 
-          <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-2">
-            <p className="text-[9px] text-amber-300">
-              Chroma key is applied via CSS mix-blend-mode in preview. Full GPU-accelerated removal is processed during export.
-            </p>
-          </div>
+
         </>
       )}
     </div>

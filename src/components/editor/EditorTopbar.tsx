@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button"
 import { useEditorStore, type ConnectionStatus } from "@/store/editorStore"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/hooks/useToast"
+import { LutPanel } from "@/components/editor/LutPanel"
+import { Layers } from "lucide-react"
 
 function Icon({ name, className = "size-4" }: { name: string; className?: string }) {
   const props = {
@@ -84,6 +86,11 @@ export function EditorTopbar() {
   const projectId = useEditorStore((s) => s.projectId)
   const connectionStatus = useEditorStore((s) => s.connectionStatus)
 
+  const globalLut    = useEditorStore((s) => s.globalLut)
+  const setGlobalLut = useEditorStore((s) => s.setGlobalLut)
+  const [showGlobalLut, setShowGlobalLut] = useState(false)
+  const globalLutRef = useRef<HTMLDivElement>(null)
+
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(projectTitle)
   const [savingTitle, setSavingTitle] = useState(false)
@@ -120,6 +127,17 @@ export function EditorTopbar() {
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [showShare])
+
+  useEffect(() => {
+    if (!showGlobalLut) return
+    const handler = (e: MouseEvent) => {
+      if (globalLutRef.current && !globalLutRef.current.contains(e.target as Node)) {
+        setShowGlobalLut(false)
+      }
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [showGlobalLut])
 
   const handleStartEdit = () => {
     setTitleDraft(projectTitle)
@@ -293,6 +311,25 @@ export function EditorTopbar() {
             {user.email}
           </span>
         )}
+
+        {/* Global LUT */}
+        <div className="relative" ref={globalLutRef}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowGlobalLut((v) => !v)}
+            title="Global LUT"
+            className={globalLut?.enabled ? "border-primary/60 text-primary" : ""}
+          >
+            <Layers className="mr-1 size-3" />
+            LUT{globalLut?.enabled ? ` · ${Math.round(globalLut.intensity * 100)}%` : ""}
+          </Button>
+          {showGlobalLut && (
+            <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-md border border-border bg-popover p-3 shadow-lg">
+              <LutPanel label="Global LUT" lut={globalLut} onChange={setGlobalLut} />
+            </div>
+          )}
+        </div>
 
         <div className="relative" ref={shareRef}>
           <Button

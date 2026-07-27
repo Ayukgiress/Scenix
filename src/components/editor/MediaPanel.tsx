@@ -1,71 +1,65 @@
-import { List, Grid, Upload, Trash2 } from "lucide-react"
-import { useRef, useState, useCallback, useEffect } from "react"
+import { List, Grid, Upload, Trash2 } from "lucide-react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import {
   useEditorStore,
   type LocalClip,
   type LocalMedia,
-} from "@/store/editorStore"
-import { useAuth } from "@/hooks/useAuth"
-import { useToast } from "@/hooks/useToast"
-import { api, uploadToCloudinary } from "@/lib/api"
-import { mediaCache } from "@/lib/mediaCache"
+} from "@/store/editorStore";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
+import { api, uploadToCloudinary } from "@/lib/api";
+import { mediaCache } from "@/lib/mediaCache";
 
-type AssetType = "video" | "audio" | "image"
-type ViewMode = "grid" | "list"
+type AssetType = "video" | "audio" | "image";
+type ViewMode = "grid" | "list";
 
 function detectAssetType(file: File): AssetType {
-  if (file.type.startsWith("video")) return "video"
-  if (file.type.startsWith("audio")) return "audio"
-  return "image"
+  if (file.type.startsWith("video")) return "video";
+  if (file.type.startsWith("audio")) return "audio";
+  return "image";
 }
 
 function readMediaDuration(file: File, kind: AssetType): Promise<number> {
   return new Promise((resolve) => {
-    if (kind === "image") return resolve(5)
-    const url = URL.createObjectURL(file)
+    if (kind === "image") return resolve(5);
+    const url = URL.createObjectURL(file);
     const el: HTMLMediaElement =
       kind === "audio"
         ? document.createElement("audio")
-        : document.createElement("video")
-    el.preload = "metadata"
-    el.src = url
+        : document.createElement("video");
+    el.preload = "metadata";
+    el.src = url;
     el.onloadedmetadata = () => {
-      const d = el.duration
-      URL.revokeObjectURL(url)
-      resolve(isFinite(d) && d > 0 ? d : 5)
-    }
+      const d = el.duration;
+      URL.revokeObjectURL(url);
+      resolve(isFinite(d) && d > 0 ? d : 5);
+    };
     el.onerror = () => {
-      URL.revokeObjectURL(url)
-      resolve(5)
-    }
-  })
+      URL.revokeObjectURL(url);
+      resolve(5);
+    };
+  });
 }
 
 function localId() {
-  return `tmp_${crypto.randomUUID()}`
+  return `tmp_${crypto.randomUUID()}`;
 }
 
 function formatDuration(sec: number): string {
-  if (typeof sec !== "number" || !isFinite(sec) || sec < 0) return "00:00.00"
-  const minutes = Math.floor(sec / 60)
-  const seconds = Math.floor(sec % 60)
-  const ms = Math.floor((sec % 1) * 100)
+  if (typeof sec !== "number" || !isFinite(sec) || sec < 0) return "00:00.00";
+  const minutes = Math.floor(sec / 60);
+  const seconds = Math.floor(sec % 60);
+  const ms = Math.floor((sec % 1) * 100);
   return `${minutes.toString().padStart(2, "0")}:${seconds
     .toString()
-    .padStart(2, "0")}.${ms.toString().padStart(2, "0")}`
+    .padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
 }
 
-function AssetPreview({
-  asset,
-  view,
-}: {
-  asset: LocalMedia
-  view: ViewMode
-}) {
+function AssetPreview({ asset, view }: { asset: LocalMedia; view: ViewMode }) {
   const commonClass =
     view === "grid"
       ? "h-full w-full object-cover"
-      : "h-8 w-14 object-cover rounded"
+      : "h-8 w-14 object-cover rounded";
   if (asset.type === "video") {
     return (
       <video
@@ -76,12 +70,10 @@ function AssetPreview({
         preload="metadata"
         crossOrigin="anonymous"
       />
-    )
+    );
   }
   if (asset.type === "image") {
-    return (
-      <img src={asset.url} alt={asset.name} className={commonClass} />
-    )
+    return <img src={asset.url} alt={asset.name} className={commonClass} />;
   }
   return (
     <div
@@ -91,49 +83,49 @@ function AssetPreview({
     >
       audio
     </div>
-  )
+  );
 }
 
 export function MediaPanel() {
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const dropRef = useRef<HTMLDivElement>(null)
-  const { accessToken } = useAuth()
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const { accessToken } = useAuth();
 
-  const mediaAssets = useEditorStore((s) => s.mediaAssets)
-  const addMediaAssetLocal = useEditorStore((s) => s.addMediaAssetLocal)
-  const updateMediaAssetLocal = useEditorStore((s) => s.updateMediaAssetLocal)
-  const removeMediaAssetLocal = useEditorStore((s) => s.removeMediaAssetLocal)
-  const addClipLocal = useEditorStore((s) => s.addClipLocal)
-  const syncAddClip = useEditorStore((s) => s.syncAddClip)
-  const clips = useEditorStore((s) => s.clips)
-  const projectId = useEditorStore((s) => s.projectId)
-  const selectClip = useEditorStore((s) => s.selectClip)
-  const seek = useEditorStore((s) => s.seek)
+  const mediaAssets = useEditorStore((s) => s.mediaAssets);
+  const addMediaAssetLocal = useEditorStore((s) => s.addMediaAssetLocal);
+  const updateMediaAssetLocal = useEditorStore((s) => s.updateMediaAssetLocal);
+  const removeMediaAssetLocal = useEditorStore((s) => s.removeMediaAssetLocal);
+  const addClipLocal = useEditorStore((s) => s.addClipLocal);
+  const syncAddClip = useEditorStore((s) => s.syncAddClip);
+  const clips = useEditorStore((s) => s.clips);
+  const projectId = useEditorStore((s) => s.projectId);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const seek = useEditorStore((s) => s.seek);
 
-  const [uploadingCount, setUploadingCount] = useState(0)
-  const [search, setSearch] = useState("")
-  const [filter, setFilter] = useState<"all" | AssetType>("all")
-  const [view, setView] = useState<ViewMode>("grid")
-  const [dragOver, setDragOver] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isDeleting, setIsDeleting] = useState<LocalMedia | null>(null)
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | AssetType>("all");
+  const [view, setView] = useState<ViewMode>("grid");
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<LocalMedia | null>(null);
 
-  const toast = useToast()
+  const toast = useToast();
 
   const uploadFile = useCallback(
     async (file: File) => {
       if (!accessToken) {
-        setError("Please sign in to upload media")
-        return
+        setError("Please sign in to upload media");
+        return;
       }
       if (!projectId) {
-        setError("Open a project first to upload media")
-        return
+        setError("Open a project first to upload media");
+        return;
       }
-      const kind = detectAssetType(file)
-      setError(null)
-      const tempId = localId()
-      const previewUrl = URL.createObjectURL(file)
+      const kind = detectAssetType(file);
+      setError(null);
+      const tempId = localId();
+      const previewUrl = URL.createObjectURL(file);
       const optimistic: LocalMedia = {
         id: tempId,
         serverId: "",
@@ -142,11 +134,11 @@ export function MediaPanel() {
         url: previewUrl,
         uploading: true,
         progress: 0,
-      }
-      addMediaAssetLocal(optimistic)
-      setUploadingCount((c) => c + 1)
+      };
+      addMediaAssetLocal(optimistic);
+      setUploadingCount((c) => c + 1);
       try {
-        const localDuration = await readMediaDuration(file, kind)
+        const localDuration = await readMediaDuration(file, kind);
         const signature = await api.createCloudinaryUpload(accessToken, {
           filename: file.name,
           type: (kind === "audio"
@@ -154,10 +146,10 @@ export function MediaPanel() {
             : kind === "video"
               ? "VIDEO"
               : "IMAGE") as "IMAGE" | "VIDEO" | "AUDIO" | "OTHER",
-        })
+        });
         const uploaded = await uploadToCloudinary(file, signature, (pct) => {
-          updateMediaAssetLocal(tempId, { progress: pct })
-        })
+          updateMediaAssetLocal(tempId, { progress: pct });
+        });
         const persisted = await api.createMedia(accessToken, {
           filename: file.name,
           type: kind,
@@ -165,7 +157,7 @@ export function MediaPanel() {
           url: uploaded.secure_url,
           projectId,
           duration: uploaded.duration ?? localDuration,
-        })
+        });
         updateMediaAssetLocal(tempId, {
           id: `srv_${persisted.id}`,
           serverId: persisted.id,
@@ -175,74 +167,74 @@ export function MediaPanel() {
           duration: persisted.duration ?? localDuration,
           uploading: false,
           progress: 100,
-        })
+        });
         // Cache metadata for future sessions
         mediaCache.set(`srv_${persisted.id}`, {
           duration: persisted.duration ?? localDuration,
           thumbnailUrl: persisted.thumbnailUrl ?? undefined,
-        })
+        });
         try {
-          URL.revokeObjectURL(previewUrl)
+          URL.revokeObjectURL(previewUrl);
         } catch {
           /* ignore */
         }
       } catch (err) {
-        console.error("Upload failed", err)
-        const msg = err instanceof Error ? err.message : "Upload failed"
+        console.error("Upload failed", err);
+        const msg = err instanceof Error ? err.message : "Upload failed";
         updateMediaAssetLocal(tempId, {
           uploading: false,
           progress: 0,
           error: msg,
-        })
-        toast.error(msg)
+        });
+        toast.error(msg);
       } finally {
-        setUploadingCount((c) => Math.max(0, c - 1))
+        setUploadingCount((c) => Math.max(0, c - 1));
       }
     },
     [accessToken, projectId, addMediaAssetLocal, updateMediaAssetLocal],
-  )
+  );
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-    Array.from(files).forEach(uploadFile)
-    if (fileInputRef.current) fileInputRef.current.value = ""
-  }
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach(uploadFile);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   useEffect(() => {
-    const el = dropRef.current
-    if (!el) return
+    const el = dropRef.current;
+    if (!el) return;
     const onDragOver = (e: DragEvent) => {
-      e.preventDefault()
-      setDragOver(true)
-    }
+      e.preventDefault();
+      setDragOver(true);
+    };
     const onDragLeave = (e: DragEvent) => {
-      if (e.target === el) setDragOver(false)
-    }
+      if (e.target === el) setDragOver(false);
+    };
     const onDrop = (e: DragEvent) => {
-      e.preventDefault()
-      setDragOver(false)
-      const files = e.dataTransfer?.files
-      if (files) Array.from(files).forEach(uploadFile)
-    }
-    el.addEventListener("dragover", onDragOver)
-    el.addEventListener("dragleave", onDragLeave)
-    el.addEventListener("drop", onDrop)
+      e.preventDefault();
+      setDragOver(false);
+      const files = e.dataTransfer?.files;
+      if (files) Array.from(files).forEach(uploadFile);
+    };
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragleave", onDragLeave);
+    el.addEventListener("drop", onDrop);
     return () => {
-      el.removeEventListener("dragover", onDragOver)
-      el.removeEventListener("dragleave", onDragLeave)
-      el.removeEventListener("drop", onDrop)
-    }
-  }, [uploadFile])
+      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("dragleave", onDragLeave);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, [uploadFile]);
 
   const handleAddToTimeline = async (asset: LocalMedia) => {
-    if (asset.uploading || asset.error) return
-    if (!asset.serverId || !accessToken) return
+    if (asset.uploading || asset.error) return;
+    if (!asset.serverId || !accessToken) return;
     const lastEnd = clips.reduce(
       (max, c) => Math.max(max, c.startTime + c.duration),
       0,
-    )
-    const duration = asset.duration && asset.duration > 0 ? asset.duration : 5
+    );
+    const duration = asset.duration && asset.duration > 0 ? asset.duration : 5;
     const localClip: LocalClip = {
       id: localId(),
       mediaId: asset.serverId,
@@ -255,51 +247,53 @@ export function MediaPanel() {
       url: asset.url,
       startTime: lastEnd,
       duration,
+      effects: [],
       track: 0,
       trimStart: 0,
       trimEnd: duration,
       volume: 1,
-    }
-    addClipLocal(localClip)
-    await syncAddClip(localClip, accessToken)
+      colorSpace: asset.colorSpace, // Inherit color space from media asset
+    };
+    addClipLocal(localClip);
+    await syncAddClip(localClip, accessToken);
     // Surface the new clip in the Properties panel and jump the playhead
     // to its start so the user immediately sees where it landed.
-    const latest = useEditorStore.getState().clips.find(
-      (c) => c.id === localClip.id,
-    )
+    const latest = useEditorStore
+      .getState()
+      .clips.find((c) => c.id === localClip.id);
     if (latest) {
-      selectClip(latest.id)
-      seek(latest.startTime)
+      selectClip(latest.id);
+      seek(latest.startTime);
     }
-  }
+  };
 
   const handleDeleteAsset = async (asset: LocalMedia) => {
-    setIsDeleting(asset)
-  }
+    setIsDeleting(asset);
+  };
 
   const confirmDelete = async () => {
-    if (!isDeleting) return
+    if (!isDeleting) return;
     if (!accessToken || !isDeleting.serverId) {
-      removeMediaAssetLocal(isDeleting.id)
-      setIsDeleting(null)
-      return
+      removeMediaAssetLocal(isDeleting.id);
+      setIsDeleting(null);
+      return;
     }
     try {
-      await api.deleteMedia(accessToken, isDeleting.serverId)
-      removeMediaAssetLocal(isDeleting.id)
-      toast.success("Media deleted")
+      await api.deleteMedia(accessToken, isDeleting.serverId);
+      removeMediaAssetLocal(isDeleting.id);
+      toast.success("Media deleted");
     } catch (err) {
-      console.error("Failed to delete media", err)
-      const msg = err instanceof Error ? err.message : "Failed to delete media"
-      setError(msg)
-      toast.error(msg)
+      console.error("Failed to delete media", err);
+      const msg = err instanceof Error ? err.message : "Failed to delete media";
+      setError(msg);
+      toast.error(msg);
     }
-    setIsDeleting(null)
-  }
+    setIsDeleting(null);
+  };
 
   const visibleAssets = mediaAssets
     .filter((a) => filter === "all" || a.type === filter)
-    .filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((a) => a.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div
@@ -403,13 +397,23 @@ export function MediaPanel() {
         {isDeleting && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4">
             <div className="w-full max-w-sm rounded-lg bg-background p-4 shadow-lg">
-              <p className="text-sm text-foreground">Are you sure you want to delete this file?</p>
-              <p className="mt-1 text-xs text-muted-foreground">{isDeleting.name}</p>
+              <p className="text-sm text-foreground">
+                Are you sure you want to delete this file?
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isDeleting.name}
+              </p>
               <div className="mt-4 flex justify-end gap-2">
-                <button onClick={() => setIsDeleting(null)} className="rounded-md bg-muted px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/80">
+                <button
+                  onClick={() => setIsDeleting(null)}
+                  className="rounded-md bg-muted px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/80"
+                >
                   Cancel
                 </button>
-                <button onClick={confirmDelete} className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600">
+                <button
+                  onClick={confirmDelete}
+                  className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
+                >
                   Delete
                 </button>
               </div>
@@ -478,8 +482,8 @@ export function MediaPanel() {
                   </span>
                   <button
                     onClick={(e) => {
-                      e.stopPropagation()
-                      handleDeleteAsset(asset)
+                      e.stopPropagation();
+                      handleDeleteAsset(asset);
                     }}
                     className="rounded p-0.5 text-foreground/50 hover:bg-red-500/10 hover:text-red-400"
                     title="Delete"
@@ -529,8 +533,8 @@ export function MediaPanel() {
                 )}
                 <button
                   onClick={(e) => {
-                    e.stopPropagation()
-                    handleDeleteAsset(asset)
+                    e.stopPropagation();
+                    handleDeleteAsset(asset);
                   }}
                   className="ml-auto rounded p-1 text-foreground/50 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400"
                   title="Delete"
@@ -543,5 +547,5 @@ export function MediaPanel() {
         )}
       </div>
     </div>
-  )
+  );
 }

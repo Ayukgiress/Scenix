@@ -17,6 +17,16 @@ import WaveSurfer from "wavesurfer.js";
 import { useEditorStore, type LocalClip } from "@/store/editorStore";
 import { useAuth } from "@/hooks/useAuth";
 import { useRealtimeCursors } from "@/hooks/useRealtimeCursors";
+import {
+  useTrimToolStore,
+  type TrimTool,
+  applyRippleTrim,
+  applyRollEdit,
+  applySlipEdit,
+  applySlideEdit,
+  applyTrim,
+} from "@/hooks/useTrimTools";
+import { TrimToolbar } from "@/components/editor/TrimToolbar";
 
 const PIXEL_PER_SECOND = 50;
 const TRACK_HEIGHT = 56;
@@ -169,11 +179,13 @@ function ClipElement({
   zoom,
   tracks,
   snapPoints,
+  activeTool,
 }: {
   clip: LocalClip;
   zoom: number;
   tracks: TrackConfig[];
   snapPoints: number[];
+  activeTool: TrimTool;
 }) {
   const updateClipLocal = useEditorStore((s) => s.updateClipLocal);
   const syncUpdateClip = useEditorStore((s) => s.syncUpdateClip);
@@ -218,7 +230,9 @@ function ClipElement({
     e.stopPropagation();
     e.preventDefault();
     selectClip(clip.id);
-    pushHistory();
+    // History is pushed inside each tool's apply function on mouseup;
+    // for plain drag we push here as before.
+    if (action === "drag") pushHistory();
     dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
@@ -231,6 +245,9 @@ function ClipElement({
     else setIsResizing(action === "resize-left" ? "left" : "right");
   };
 
+  // Accumulated delta while dragging a trim handle (avoids re-reading clip state mid-drag)
+  const accDeltaRef = useRef(0);
+
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       const dx = e.clientX - dragStartRef.current.x;
@@ -238,64 +255,168 @@ function ClipElement({
       const timeDelta = dx / (PIXEL_PER_SECOND * zoom);
 
       if (isDragging) {
+        if (activeTool === "slip") {
+          // Slip: horizontal drag shifts in/out without moving clip
+          const delta = timeDelta - accDeltaRef.current;
+          accDeltaRef.current = timeDelta;
+          const store = useEditorStore.getState();
+          const c = store.clips.find((x) => x.id === clip.id);
+          if (c) {
+            updateClipLocal(clip.id, {
+              trimStart: Math.max(0, (c.trimStart ?? 0) + delta),
+              trimEnd: (c.trimEnd ?? c.duration) + delta,
+            });
+          }
+          return;
+        }
+        if (activeTool === "slide") {
+          // Slide: move clip, roll neighbours live
+          const delta = timeDelta - accDeltaRef.current;
+          accDeltaRef.current = timeDelta;
+          const store = useEditorStore.getState();
+          const c = store.clips.find((x) => x.id === clip.id);
+          if (!c) return;
+          const newStart = Math.max(0, c.startTime + delta);
+          const actualDelta = newStart - c.startTime;
+          if (Math.abs(actualDelta) < 0.001) return;
+          updateClipLocal(clip.id, { startTime: newStart });
+          const prevClip = store.clips
+            .filter((x) => x.id !== clip.id && x.track === c.track && x.startTime < c.startTime)
+            .sort((a, b) => b.startTime - a.startTime)[0];
+          const nextClip = store.clips
+            .filter((x) => x.id !== clip.id && x.track === c.track && x.startTime > c.startTime)
+            .sort((a, b) => a.startTime - b.startTime)[0];
+          if (prevClip) {
+            updateClipLocal(prevClip.id, {
+              duration: Math.max(0.1, prevClip.duration + actualDelta),
+              trimEnd: (prevClip.trimEnd ?? prevClip.duration) + actualDelta,
+            });
+          }
+          if (nextClip) {
+            updateClipLocal(nextClip.id, {
+              startTime: nextClip.startTime + actualDelta,
+              duration: Math.max(0.1, nextClip.duration - actualDelta),
+              trimStart: Math.max(0, (nextClip.trimStart ?? 0) + actualDelta),
+            });
+          }
+          return;
+        }
+
+        // Default: move clip position
         const rawPx =
           (dragStartRef.current.startTime + timeDelta) *
           PIXEL_PER_SECOND *
           zoom;
         const snappedPx = snapPx(Math.max(0, rawPx));
         const newStartTime = snappedPx / (PIXEL_PER_SECOND * zoom);
-
-        // Vertical: determine new track from Y delta
         const trackDelta = Math.round(dy / TRACK_HEIGHT);
         const newTrack = Math.max(
           0,
           Math.min(tracks.length - 1, dragStartRef.current.track + trackDelta),
         );
-
         updateClipLocal(clip.id, { startTime: newStartTime, track: newTrack });
-      } else if (isResizing === "left") {
-        const newStartTime = Math.max(
-          0,
-          dragStartRef.current.startTime + timeDelta,
-        );
-        const newDuration = dragStartRef.current.duration - timeDelta;
-        if (newDuration > 0.1) {
-          const newTrimStart = Math.max(
-            0,
-            dragStartRef.current.trimStart + timeDelta,
-          );
-          updateClipLocal(clip.id, {
-            startTime: newStartTime,
-            duration: newDuration,
-            trimStart: newTrimStart,
-          });
+      } else if (isResizing) {
+        const edge = isResizing;
+        const delta = timeDelta - accDeltaRef.current;
+        accDeltaRef.current = timeDelta;
+        const store = useEditorStore.getState();
+        const c = store.clips.find((x) => x.id === clip.id);
+        if (!c) return;
+
+        if (activeTool === "ripple") {
+          if (edge === "left") {
+            const newStart = Math.max(0, c.startTime + delta);
+            const newDuration = c.duration - (newStart - c.startTime);
+            if (newDuration < 0.1) return;
+            updateClipLocal(clip.id, {
+              startTime: newStart,
+              duration: newDuration,
+              trimStart: Math.max(0, (c.trimStart ?? 0) + delta),
+            });
+            store.clips
+              .filter((x) => x.id !== clip.id && x.track === c.track && x.startTime >= c.startTime)
+              .forEach((x) => updateClipLocal(x.id, { startTime: x.startTime + delta }));
+          } else {
+            const newDuration = Math.max(0.1, c.duration + delta);
+            const rippleDelta = newDuration - c.duration;
+            updateClipLocal(clip.id, {
+              duration: newDuration,
+              trimEnd: (c.trimEnd ?? c.duration) + delta,
+            });
+            const clipEnd = c.startTime + c.duration;
+            store.clips
+              .filter((x) => x.id !== clip.id && x.track === c.track && x.startTime >= clipEnd)
+              .forEach((x) => updateClipLocal(x.id, { startTime: x.startTime + rippleDelta }));
+          }
+        } else if (activeTool === "roll") {
+          const adjacent =
+            edge === "right"
+              ? store.clips.find(
+                  (x) => x.id !== clip.id && x.track === c.track &&
+                    Math.abs(x.startTime - (c.startTime + c.duration)) < 0.05,
+                )
+              : store.clips.find(
+                  (x) => x.id !== clip.id && x.track === c.track &&
+                    Math.abs(x.startTime + x.duration - c.startTime) < 0.05,
+                );
+          if (edge === "right") {
+            updateClipLocal(clip.id, {
+              duration: Math.max(0.1, c.duration + delta),
+              trimEnd: (c.trimEnd ?? c.duration) + delta,
+            });
+            if (adjacent) {
+              updateClipLocal(adjacent.id, {
+                startTime: adjacent.startTime + delta,
+                duration: Math.max(0.1, adjacent.duration - delta),
+                trimStart: Math.max(0, (adjacent.trimStart ?? 0) + delta),
+              });
+            }
+          } else {
+            updateClipLocal(clip.id, {
+              startTime: Math.max(0, c.startTime + delta),
+              duration: Math.max(0.1, c.duration - delta),
+              trimStart: Math.max(0, (c.trimStart ?? 0) + delta),
+            });
+            if (adjacent) {
+              updateClipLocal(adjacent.id, {
+                duration: Math.max(0.1, adjacent.duration + delta),
+                trimEnd: (adjacent.trimEnd ?? adjacent.duration) + delta,
+              });
+            }
+          }
+        } else {
+          // "trim" or "select" — plain resize
+          if (edge === "left") {
+            const newStart = Math.max(0, c.startTime + delta);
+            const newDuration = Math.max(0.1, c.duration - (newStart - c.startTime));
+            updateClipLocal(clip.id, {
+              startTime: newStart,
+              duration: newDuration,
+              trimStart: Math.max(0, (c.trimStart ?? 0) + delta),
+            });
+          } else {
+            updateClipLocal(clip.id, {
+              duration: Math.max(0.1, c.duration + delta),
+              trimEnd: (c.trimEnd ?? c.duration) + delta,
+            });
+          }
         }
-      } else if (isResizing === "right") {
-        const newDuration = Math.max(
-          0.1,
-          dragStartRef.current.duration + timeDelta,
-        );
-        const newTrimEnd =
-          (clip.trimEnd ?? dragStartRef.current.duration) + timeDelta;
-        updateClipLocal(clip.id, {
-          duration: newDuration,
-          trimEnd: newTrimEnd,
-        });
       }
     },
     [
       isDragging,
       isResizing,
       clip.id,
-      clip.trimEnd,
       updateClipLocal,
       zoom,
       snapPx,
       tracks.length,
+      activeTool,
     ],
   );
 
   const handleMouseUp = useCallback(() => {
+    accDeltaRef.current = 0;
     // Only sync to server on mouseup — not on every move
     if ((isDragging || isResizing) && accessToken) {
       const store = useEditorStore.getState();
@@ -354,12 +475,14 @@ function ClipElement({
       {/* Resize handle left */}
       <div
         className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l-md bg-white/20 opacity-0 transition-opacity hover:opacity-100 z-20"
-        onMouseDown={(e) => startInteraction(e, "resize-left")}
+        title={`${activeTool} left edge`}
+        onMouseDown={(e) => { accDeltaRef.current = 0; startInteraction(e, "resize-left"); }}
       />
       {/* Resize handle right */}
       <div
         className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r-md bg-white/20 opacity-0 transition-opacity hover:opacity-100 z-20"
-        onMouseDown={(e) => startInteraction(e, "resize-right")}
+        title={`${activeTool} right edge`}
+        onMouseDown={(e) => { accDeltaRef.current = 0; startInteraction(e, "resize-right"); }}
       />
 
       {/* Thumbnail strip for video */}
@@ -416,6 +539,10 @@ export function Timeline() {
   const clips = useEditorStore((s) => s.clips);
   const currentTime = useEditorStore((s) => s.playback.currentTime);
   const duration = useEditorStore((s) => s.playback.duration);
+  const inPoint  = useEditorStore((s) => s.playback.inPoint);
+  const outPoint = useEditorStore((s) => s.playback.outPoint);
+  const setInPoint  = useEditorStore((s) => s.setInPoint);
+  const setOutPoint = useEditorStore((s) => s.setOutPoint);
   const seek = useEditorStore((s) => s.seek);
   const zoom = useEditorStore((s) => s.zoom);
   const setZoom = useEditorStore((s) => s.setZoom);
@@ -431,6 +558,7 @@ export function Timeline() {
   const { accessToken } = useAuth();
 
   const remoteCursors = useRealtimeCursors();
+  const activeTool = useTrimToolStore((s) => s.activeTool);
 
   const [tracks, setTracks] = useState<TrackConfig[]>(DEFAULT_TRACKS);
 
@@ -522,6 +650,9 @@ export function Timeline() {
           >
             <Scissors className="size-3.5" />
           </button>
+
+          {/* Trim tools */}
+          <TrimToolbar />
 
           {/* Undo / Redo */}
           <button
@@ -654,6 +785,57 @@ export function Timeline() {
                   />
                 ) : null,
             )}
+
+            {/* In/Out region tint */}
+            {inPoint !== null && outPoint !== null && outPoint > inPoint && (
+              <div
+                className="pointer-events-none absolute top-0 h-full bg-amber-400/10"
+                style={{
+                  left:  `${inPoint  * PIXEL_PER_SECOND * zoom}px`,
+                  width: `${(outPoint - inPoint) * PIXEL_PER_SECOND * zoom}px`,
+                }}
+              />
+            )}
+
+            {/* In point marker */}
+            {inPoint !== null && (
+              <div
+                className="absolute top-0 z-20 flex h-full cursor-pointer flex-col items-center"
+                style={{ left: `${inPoint * PIXEL_PER_SECOND * zoom}px` }}
+                title={`In point — click to clear`}
+                onClick={() => setInPoint(null)}
+              >
+                <div className="h-full w-0.5 bg-amber-400" />
+                <div
+                  className="absolute top-0 left-0 h-0 w-0"
+                  style={{
+                    borderTop: "8px solid #fbbf24",
+                    borderRight: "6px solid transparent",
+                  }}
+                />
+                <span className="absolute top-1 left-1 text-[7px] font-bold text-amber-400 leading-none">I</span>
+              </div>
+            )}
+
+            {/* Out point marker */}
+            {outPoint !== null && (
+              <div
+                className="absolute top-0 z-20 flex h-full cursor-pointer flex-col items-center"
+                style={{ left: `${outPoint * PIXEL_PER_SECOND * zoom}px` }}
+                title={`Out point — click to clear`}
+                onClick={() => setOutPoint(null)}
+              >
+                <div className="h-full w-0.5 bg-amber-400" />
+                <div
+                  className="absolute top-0 right-0 h-0 w-0"
+                  style={{
+                    borderTop: "8px solid #fbbf24",
+                    borderLeft: "6px solid transparent",
+                  }}
+                />
+                <span className="absolute top-1 right-1 text-[7px] font-bold text-amber-400 leading-none">O</span>
+              </div>
+            )}
           </div>
 
           {/* Track rows */}
@@ -695,6 +877,7 @@ export function Timeline() {
                       zoom={zoom}
                       tracks={tracks}
                       snapPoints={snapPoints}
+                      activeTool={activeTool}
                     />
                   ))}
               </div>

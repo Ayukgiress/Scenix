@@ -26,13 +26,14 @@ import { useEditorStore, type LocalClip } from "@/store/editorStore"
 // ─── types ───────────────────────────────────────────────────────────────────
 
 interface TrackNodes {
-  source:    MediaElementSourceNode
-  gainNode:  GainNode          // per-clip volume
-  panner:    StereoPannerNode  // per-clip pan
+  source:       MediaElementAudioSourceNode
+  gainNode:     GainNode          // per-clip volume
+  panner:       StereoPannerNode  // per-clip pan
+  analyser:     AnalyserNode      // per-track level metering
   /** Connect future effect nodes between insertOutput and masterGain */
-  insertOutput: AudioNode      // currently === panner; reassign when inserting effects
-  element:   HTMLMediaElement
-  loadedUrl: string
+  insertOutput: AudioNode         // currently === analyser; reassign when inserting effects
+  element:      HTMLMediaElement
+  loadedUrl:    string
 }
 
 export interface AudioMixerOptions {
@@ -58,11 +59,12 @@ function clipTime(c: LocalClip, t: number) {
 
 export function useAudioMixer(options: AudioMixerOptions) {
   // Stable refs — never cause re-renders
-  const ctxRef        = useRef<AudioContext | null>(null)
-  const masterGain    = useRef<GainNode | null>(null)
-  const tracks        = useRef<Map<string, TrackNodes>>(new Map())
-  const optionsRef    = useRef(options)
-  const soloIdRef     = useRef<string | null>(null)
+  const ctxRef          = useRef<AudioContext | null>(null)
+  const masterGain      = useRef<GainNode | null>(null)
+  const masterAnalyser  = useRef<AnalyserNode | null>(null)
+  const tracks          = useRef<Map<string, TrackNodes>>(new Map())
+  const optionsRef      = useRef(options)
+  const soloIdRef       = useRef<string | null>(null)
 
   // Keep options ref current without recreating the effect
   useEffect(() => { optionsRef.current = options }, [options])
@@ -73,8 +75,12 @@ export function useAudioMixer(options: AudioMixerOptions) {
       const ctx = new AudioContext()
       ctxRef.current = ctx
       const mg = ctx.createGain()
-      mg.connect(ctx.destination)
+      const ma = ctx.createAnalyser()
+      ma.fftSize = 1024
+      mg.connect(ma)
+      ma.connect(ctx.destination)
       masterGain.current = mg
+      masterAnalyser.current = ma
     }
     // Resume if suspended (browser autoplay policy)
     if (ctxRef.current.state === "suspended") {
@@ -114,15 +120,18 @@ export function useAudioMixer(options: AudioMixerOptions) {
     const source   = ctx.createMediaElementSource(el)
     const gainNode = ctx.createGain()
     const panner   = ctx.createStereoPanner()
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 1024
 
-    // Chain: source → gain → panner → [insert point] → masterGain
+    // Chain: source → gain → panner → analyser → [insert point] → masterGain
     source.connect(gainNode)
     gainNode.connect(panner)
-    panner.connect(masterGain.current!)
+    panner.connect(analyser)
+    analyser.connect(masterGain.current!)
 
     const entry: TrackNodes = {
-      source, gainNode, panner,
-      insertOutput: panner,   // effect nodes splice between panner and masterGain
+      source, gainNode, panner, analyser,
+      insertOutput: analyser,  // effect nodes splice between analyser and masterGain
       element: el,
       loadedUrl: url,
     }
@@ -137,6 +146,7 @@ export function useAudioMixer(options: AudioMixerOptions) {
         t.source.disconnect()
         t.gainNode.disconnect()
         t.panner.disconnect()
+        t.analyser.disconnect()
         t.element.pause()
         tracks.current.delete(id)
       }
@@ -238,6 +248,7 @@ export function useAudioMixer(options: AudioMixerOptions) {
         t.source.disconnect()
         t.gainNode.disconnect()
         t.panner.disconnect()
+        t.analyser.disconnect()
         t.element.pause()
       }
       tracks.current.clear()
@@ -250,6 +261,41 @@ export function useAudioMixer(options: AudioMixerOptions) {
   }, [])
 
   // ── public API ────────────────────────────────────────────────────────────
+
+  /**
+   * Read instantaneous RMS levels (in dBFS) for every active track and master.
+   * Returns a map of clipId → dBFS, plus a "master" key.
+   * Values are in the range [-Infinity, 0]. Caller should clamp for display.
+   */
+  function getLevels(): Map<string, number> {
+    const result = new Map<string, number>()
+    const buf = new Uint8Array(1024)
+
+    for (const [id, t] of tracks.current) {
+      t.analyser.getByteTimeDomainData(buf)
+      let sum = 0
+      for (let i = 0; i < buf.length; i++) {
+        const s = (buf[i] - 128) / 128
+        sum += s * s
+      }
+      const rms = Math.sqrt(sum / buf.length)
+      result.set(id, rms > 0 ? 20 * Math.log10(rms) : -Infinity)
+    }
+
+    const ma = masterAnalyser.current
+    if (ma) {
+      ma.getByteTimeDomainData(buf)
+      let sum = 0
+      for (let i = 0; i < buf.length; i++) {
+        const s = (buf[i] - 128) / 128
+        sum += s * s
+      }
+      const rms = Math.sqrt(sum / buf.length)
+      result.set("master", rms > 0 ? 20 * Math.log10(rms) : -Infinity)
+    }
+
+    return result
+  }
 
   /** Set the solo clip id. Pass null to clear solo. */
   function setSolo(clipId: string | null) {
@@ -288,5 +334,5 @@ export function useAudioMixer(options: AudioMixerOptions) {
     }
   }
 
-  return { setSolo, insertEffect }
+  return { setSolo, insertEffect, getLevels }
 }

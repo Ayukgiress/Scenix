@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api"
 import { useAuth } from "@/hooks/useAuth"
+import { useEditorStore } from "@/store/editorStore"
 import { Download, X, Loader2, Zap } from "lucide-react"
 
 type Format = "MP4" | "MOV" | "WebM" | "GIF"
@@ -34,6 +35,9 @@ export function ExportDialog() {
   const [params] = useSearchParams()
   const projectId = params.get("project")
   const { accessToken } = useAuth()
+
+  const globalLut = useEditorStore((s) => s.globalLut)
+  const clips     = useEditorStore((s) => s.clips)
 
   const [filename,   setFilename]   = useState("video_export")
   const [format,     setFormat]     = useState<Format>("MP4")
@@ -88,11 +92,19 @@ export function ExportDialog() {
     setErrorMsg(null)
     setProgress(0)
     try {
+      const clipLuts = clips
+        .filter((c) => c.lut?.enabled && c.lut.url)
+        .map((c) => ({ clipId: c.serverId ?? c.id, url: c.lut!.url, intensity: c.lut!.intensity }))
+
       const job = await api.createExport(accessToken, {
         projectId,
         format: format.toLowerCase(),
         quality: resolution,
-        settings: { fps, proRes, twoPass, filename },
+        settings: {
+          fps, proRes, twoPass, filename,
+          globalLut: globalLut?.enabled ? { url: globalLut.url, intensity: globalLut.intensity } : undefined,
+          clipLuts: clipLuts.length > 0 ? clipLuts : undefined,
+        },
       })
       setExportId(job.id)
       setPhase("polling")

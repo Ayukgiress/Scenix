@@ -10,6 +10,93 @@ import { api, uploadToCloudinary } from "@/lib/api"
 import { MUSIC_CATALOG, MOODS, GENRES, type CatalogTrack, type Mood, type Genre } from "@/lib/musicCatalog"
 import { useAudioMixerAPI } from "@/context/AudioMixerContext"
 
+// ─── VU Meter ─────────────────────────────────────────────────────────────────
+// Renders a vertical bar that animates via RAF, reading levels from getLevels().
+// `trackId` is the clip id, or "master" for the master bus.
+
+const DB_FLOOR = -60  // dBFS floor shown as empty bar
+const DB_CLIP  =  -3  // above this → red segment
+
+function dbToFraction(db: number): number {
+  if (!isFinite(db)) return 0
+  return Math.max(0, Math.min(1, (db - DB_FLOOR) / -DB_FLOOR))
+}
+
+function VUMeter({ trackId, getLevels }: { trackId: string; getLevels: () => Map<string, number> }) {
+  const canvasRef  = useRef<HTMLCanvasElement>(null)
+  const peakRef    = useRef(0)          // peak hold fraction
+  const peakTsRef  = useRef(0)          // timestamp of last peak update
+  const rafRef     = useRef(0)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    const W = canvas.width
+    const H = canvas.height
+
+    const draw = (now: number) => {
+      rafRef.current = requestAnimationFrame(draw)
+
+      const levels = getLevels()
+      const db     = levels.get(trackId) ?? -Infinity
+      const frac   = dbToFraction(db)
+
+      // Peak hold: update if new peak, decay after 1.5 s
+      if (frac > peakRef.current) {
+        peakRef.current = frac
+        peakTsRef.current = now
+      } else if (now - peakTsRef.current > 1500) {
+        peakRef.current = Math.max(0, peakRef.current - 0.008)
+      }
+
+      ctx.clearRect(0, 0, W, H)
+
+      // Background
+      ctx.fillStyle = "rgba(0,0,0,0.35)"
+      ctx.fillRect(0, 0, W, H)
+
+      // Filled bar (bottom-up)
+      const barH = Math.round(frac * H)
+      const clipH = Math.round(dbToFraction(DB_CLIP) * H)
+
+      // Green segment
+      const greenH = Math.min(barH, H - clipH)
+      if (greenH > 0) {
+        ctx.fillStyle = "#34d399"
+        ctx.fillRect(0, H - greenH, W, greenH)
+      }
+      // Red (clip) segment
+      if (barH > H - clipH) {
+        ctx.fillStyle = "#f87171"
+        ctx.fillRect(0, H - barH, W, barH - (H - clipH))
+      }
+
+      // Peak hold tick
+      if (peakRef.current > 0) {
+        const py = Math.round((1 - peakRef.current) * H)
+        ctx.fillStyle = peakRef.current >= dbToFraction(DB_CLIP) ? "#fbbf24" : "#a7f3d0"
+        ctx.fillRect(0, py, W, 2)
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [trackId, getLevels])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={6}
+      height={48}
+      className="shrink-0 rounded-sm"
+      style={{ imageRendering: "pixelated" }}
+    />
+  )
+}
+
 function localId() {
   return `tmp_${crypto.randomUUID()}`
 }
@@ -69,9 +156,9 @@ function Waveform({
     wsRef.current = ws
     ws.load(url).catch(() => {})
     if (onSeek) {
-      ws.on("seek", (progress) => {
+      ws.on("interaction", (progress) => {
         const dur = ws.getDuration()
-        if (dur > 0) onSeek(progress * dur)
+        if (dur > 0 && progress !== undefined) onSeek(progress * dur)
       })
     }
     return () => { ws.destroy(); wsRef.current = null }
@@ -347,6 +434,7 @@ function MixerTab() {
   const isPlaying = useEditorStore((s) => s.playback.isPlaying)
   const { accessToken } = useAuth()
   const mixerAPI = useAudioMixerAPI()
+  const getLevels = mixerAPI?.getLevels ?? (() => new Map<string, number>())
 
   const [soloId, setSoloId] = useState<string | null>(null)
 
@@ -414,6 +502,7 @@ function MixerTab() {
           >
             {/* Clip header */}
             <div className="flex items-center gap-2">
+              <VUMeter trackId={clip.id} getLevels={getLevels} />
               <div
                 className={`size-2 shrink-0 rounded-full ${isActive ? "animate-pulse bg-emerald-400" : "bg-muted-foreground/30"}`}
               />
@@ -519,6 +608,12 @@ function MixerTab() {
           </div>
         )
       })}
+
+      {/* Master bus strip */}
+      <div className="flex items-center gap-2 border-t border-border/60 bg-muted/20 px-3 py-2.5">
+        <VUMeter trackId="master" getLevels={getLevels} />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Master</span>
+      </div>
     </div>
   )
 }
@@ -629,10 +724,18 @@ function MusicTab() {
                 <div key={track.id} className={`group flex items-center gap-2 px-3 py-2.5 transition-colors hover:bg-muted/30 ${
                   isPreviewing ? "bg-emerald-500/5" : ""
                 }`}>
-                  {/* Color avatar */}
+                  {/* Color/Image avatar */}
                   <div
-                    className="grid size-8 shrink-0 place-items-center rounded-md text-[10px] font-bold text-white"
-                    style={{ backgroundColor: track.thumbnail }}
+                    className="grid size-8 shrink-0 place-items-center rounded-md text-[10px] font-bold text-white overflow-hidden"
+                    style={
+                      track.thumbnail.startsWith("http") 
+                        ? { 
+                            backgroundImage: `url(${track.thumbnail})`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center"
+                          } 
+                        : { backgroundColor: track.thumbnail }
+                    }
                   >
                     {track.title[0]}
                   </div>

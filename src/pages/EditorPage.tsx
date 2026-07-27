@@ -18,12 +18,21 @@ import { X } from "lucide-react"
 
 const SHORTCUTS = [
   { key: "Space",          desc: "Play / Pause" },
+  { key: "L",              desc: "Play forward (repeat = faster: ×1 ×2 ×4 ×8)" },
+  { key: "J",              desc: "Play reverse (repeat = faster)" },
+  { key: "K",              desc: "Pause" },
+  { key: ", / .",          desc: "Step one frame back / forward" },
+  { key: "I",              desc: "Set in point (toggle)" },
+  { key: "O",              desc: "Set out point (toggle)" },
   { key: "S",              desc: "Split clip at playhead" },
+  { key: "T",              desc: "Cycle trim tool (Select → Trim → Ripple → Roll → Slip → Slide)" },
+  { key: "[",              desc: "Select left edge for JKL trim" },
+  { key: "]",              desc: "Select right edge for JKL trim" },
+  { key: "J / K / L",     desc: "Scrub trim edge (when trim tool + edge active)" },
   { key: "M",              desc: "Mute / unmute selected clip" },
   { key: "Delete",         desc: "Delete selected clip" },
   { key: "← / →",         desc: "Seek 1 second" },
   { key: "Shift + ← / →", desc: "Seek 5 seconds" },
-  { key: ", / .",          desc: "Step one frame" },
   { key: "Home / End",     desc: "Jump to start / end" },
   { key: "+ / -",          desc: "Zoom in / out" },
   { key: "Ctrl+Z",         desc: "Undo" },
@@ -90,7 +99,10 @@ export function EditorPage() {
 
   useEditorShortcuts()
 
-  useEffect(() => shortcutHelpBus.subscribe(() => setShowShortcuts(true)), [])
+  useEffect(() => {
+    const unsubscribe = shortcutHelpBus.subscribe(() => setShowShortcuts(true))
+    return () => { unsubscribe() }
+  }, [])
 
   // Hold a reference to the realtime socket for the lifetime of the
   // editor and leave the project when this page is unmounted.
